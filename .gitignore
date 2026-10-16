@@ -1,0 +1,75 @@
+node_modules/
+agentcreation/dashboard/node_modules/
+deploytools/node_modules/
+build_test/
+build200/
+*.bin
+*-check.yml
+anim-verify.yml
+anim-live-check.yml
+livecheck.txt
+verify-tab.yml
+tab-config.yml
+animations*.yml
+npcs.yml
+ls-config.yml
+ls.jar
+kit-*.yml
+lb-*.yml
+ranks-check.yml
+cfg-check*.yml
+spawn-check.yml
+lobby-warp-check.yml
+regions.yml
+grim-config.yml
+.opencode/
+mcp/
+# private ops tooling + notes (live creds, local paths) — never public
+deploytools/
+TODO.md
+minebot/
+mcp/rcon-config.json
+mcp/sftp-config.json
+mcp/state/
+agentcreation/runner/bots.local.yml
+agentcreation/runner/ml-bots.json
+agentcreation/runner/.env
+agentcreation/runner/fighter.log
+build180/
+classes/
+*.log
+audit_javac.log
+# secrets / local-only artifacts (never commit)
+google.key
+*.key
+*.zip
+tmp_one/
+build_test2/
+dm-*.txt
+# pulled live files (contain secrets: bot tokens, passwords)
+sftp-pull/
+# --- root live dumps / debug artifacts (never commit) ---
+# Build counter churns every package run
+.buildnum
+# Server / world files dumped at root
+srv.properties
+wlevel.dat
+*.mca
+*.dat
+*.gz
+*.jsonl
+# Root-level data dumps (keep only explicit allowlist below)
+/*.txt
+!banned-words.txt
+!changelog.txt
+/*.yml
+!config.yml
+!plugin.yml
+/*.json
+!opencode.jsonc
+# belt-and-braces for known dump prefixes (also covered by above)
+*-live*.yml
+*-fresh.yml
+*-remote.yml
+live-*.yml
+ess-*.yml

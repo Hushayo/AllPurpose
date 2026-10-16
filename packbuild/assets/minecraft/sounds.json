@@ -1,0 +1,10 @@
+{
+  "music_disc.close_eyes": {
+    "sounds": [
+      {
+        "name": "close_eyes_among_us",
+        "stream": true
+      }
+    ]
+  }
+}

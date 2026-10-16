@@ -1,0 +1,206 @@
+survival-mode: true
+# --- Linked-plugin guard: linked plugins should use AllPurposeAPI (read-only).
+# Privileged RankManager calls (staffSet/setFrozen/lpSync) from outside
+# com.hush.allpurpose are blocked + logged unless this is true.
+allow-external-mutations: false
+# --- Chat anti-spam: per-player cooldown (seconds between messages) ---
+# OPs and rank.admins bypass. 0 = off. Applies on /allpurpose reload.
+chatmod-cooldown-seconds: 5
+chatmod-cooldown-message: "&cSlow down! Wait {s}s."
+# --- Nametag: rank tag + hearts + lifetime kills ---
+# Fully automatic. Updates on join, on damage/heal, and on a timer.
+# No commands needed.
+#
+# mode:
+#   tab      -> "[TAG] Name | 10.0 | Kills: 12"   (TAB renders it, no extra entities)
+#   hologram -> stats float above the head, nametag below (two-line look)
+#   both     -> both at once
+#   off      -> plain "[TAG] Name"
+#
+# prefix / suffix go through TAB's API (mode: tab). TAB draws prefix+name+suffix,
+# so the stats ride along as the suffix.
+# tab-line is only used when TAB is NOT installed (vanilla display name).
+# holo-line is the floating text for mode: hologram. Name left out on purpose.
+#
+# Placeholders: {rank} {prefix} {name} {hearts} {hp} {maxhp} {kills} {deaths}
+#   {prefix} = the rank's coloured tag, e.g. "&aOWNER"
+#   {hearts} = health / 2      {hp} = raw health
+#   {abs} = absorption / 2 (gapple / god-apple yellow hearts)
+#   {total} = (health + absorption) / 2 — use this for hologram hearts
+nametag:
+  mode: tab
+  refresh-ticks: 10
+  force-refresh-seconds: 5
+  # Ping colour bands for {ping}:
+  #   <= ping-good-ms green, <= ping-ok-ms yellow, above that red
+  ping-good-ms: 60
+  ping-ok-ms: 120
+  prefix: "{prefix} "
+  suffix: ""
+  tab-line: "{prefix} {name}"
+  holo-line: "&c❤ {total}"
+# Death drops are KEPT (vanilla). Arena floor stays placeable via
+# ground-cleanup instant-pickup above (loot kept, not destroyed).
+# --- Death feed: REMOVED (ranks-only build) ---
+# Kills count silently behind the rank ladder; death chat is vanilla.
+# --- Discord relay (chat / joins / deaths / duels / ranks, no restart needed
+# to TOGGLE: reads per-use; the feature itself activates on next boot) ---
+# Paste the webhook URL to enable. Events toggle each feed individually.
+discord-enabled: true
+discord-webhook: ""
+discord-events:
+  joins: true
+  chat: true
+  deaths: true
+  duels: true
+  ranks: true
+  plugin: true
+
+# --- Bot command log grouping (console/log declutter) ---
+# Bot players (registry + AGENT rank) spam "X issued server command: /..." every
+# few seconds. mode:
+#   group -> hide originals, emit one summary per window: [BotCmd] Name: /cmd (12x)
+#   hide  -> hide originals, no summary
+#   off   -> vanilla logging (floods)
+# Window needs restart; mode applies on /allpurpose reload.
+bot-command-log-mode: group
+bot-command-log-window-seconds: 10
+# --- TAB inactive tag: REMOVED (code hardcoded off, keys deleted) ---
+# --- Kill effects: master switch only (old per-rank LT*/HT* entries removed, those ranks no longer exist) ---
+# type: off|puff|rockets|lightning|storm. Add e.g. killfx: {VIP: {type: puff, count: 12}} to re-enable per rank.
+killfx-enabled: false
+killfx: {}
+# --- Time Traveler advancement (ping hall of fame) ---
+# Hit this ping (ms) and you earn allpurpose:time_traveler with toast + chat.
+# 1000 = a full second of lag. Raise to make it rarer.
+ping-advancement-ms: 1000
+# --- Leaderboard hologram (/lb holo places it, /lb removeholo clears it) ---
+# BALTOP section reads Essentials userdata (same money /baltop ranks, honors
+# baltop-exempt). KILLTOP reads our lb.yml. /allpurpose reload applies.
+lb-holo-baltop-enabled: true
+lb-holo-baltop-lines: 10
+lb-holo-kill-lines: 10
+lb-holo-baltop-cache-seconds: 60
+# --- RCON console spam filter (keeps RCON enabled) ---
+# Hides vanilla "Thread RCON Client /x.x.x.x started / shutting down" INFO
+# lines plus the Essentials "Rcon issued server command: /list" polling echo.
+# RCON itself keeps working — this is log-only. /allpurpose reload applies it.
+rcon-spam-filter-enabled: true
+# --- Linked survival server (/survival, open to all) ---
+transfer-host: "15.235.212.121"
+transfer-port: 10066
+
+# --- LuckPerms `parent set` guard (warn-only, never blocks) ---
+# `lp user <name> parent set <group>` REPLACES every parent group, silently
+# stripping `default` (warp/kits/msg). The safe form is additive:
+# `lp user <name> parent add <group>`. When anyone runs the dangerous shapes
+# (`parent set`, `parent clear`, `parent remove default`) they get a warning
+# with the safe form + repair line, and it is logged. True = on.
+lp-parent-guard-enabled: true
+
+# --- LuckPerms group mirror: hushrank -> LP parent (kit permissions etc.) ---
+# When a player GAINS a synced rank:  lp user <uuid> parent add <rank>
+# When they LOSE it (removed, demoted, rank deleted): parent remove <rank>
+# Runs as console commands; LP replies land in the server log.
+# Backfill everyone: /rank lpsync all (after creating the LP groups below).
+lp-sync-enabled: true
+lp-sync-groups: []
+# Ladder minimums: LP group -> lowest ladder rank that also earns it.
+# Example: mykit: VIP means everyone holding VIP or anything above it on the ladder
+# keeps the group too, so higher ranks keep the lower kits.
+lp-sync-minimums: {}
+
+# --- Auto-rank ladder: lifetime kills promote you through it (/rank ladder) ---
+# Ladder must start with MEMBER. rankup-kills = kills needed to ENTER that rank.
+# Old PvP ladder (LT*/HT*/...) removed: those ranks no longer exist (see /rank list).
+# auto-rankup: false freezes all automatic promotions (manual /rank upgrades still work).
+auto-rankup: true
+rank-ladder: [MEMBER]
+rankup-kills: {}
+
+
+# --- LP temp-group expiry notifier (tells player when a temp rank lapses) ---
+# Watch [] = all temp groups. Message placeholders: {group} {player}.
+lp-expiry-enabled: true
+lp-expiry-check-seconds: 60
+lp-expiry-notify-on-join: true
+lp-expiry-watch-groups: []
+lp-expiry-message: "&cYour rank &f{group} &chas expired!"
+
+
+
+# --- Discord invite auto-announce (clickable tellraw, activity-gated) ---
+# Every interval-minutes (restart to change), if at least min-players REAL
+# (non-bot) players are online, broadcasts: line + clickable [invite].
+# Click opens invite-url (hover shows "Click to join Discord").
+# enabled/min-players/invite-url/line apply on /allpurpose reload.
+discord-ad:
+  enabled: true
+  interval-minutes: 10
+  min-players: 5
+  invite-url: "https://discord.gg/mzF50k594f"
+  line: "&7Join our &bDiscord &7server: "
+
+# --- Discord public chat log (BOT, same token as status board) ---
+# Logs player chat + /say + /broadcast + join/quit/death public messages to
+# channel-id via the STATUS BOT (not a webhook), so custom guild emoji render.
+# Player lines use embed author icons (mc-heads) = heads server-side, instant.
+# Toggles apply on /allpurpose reload (needs restart once to install).
+discord-chatlog:
+  enabled: true
+  channel-id: "1560744974386077867"
+  chat: true
+  broadcast: true
+  joins: true
+  deaths: true
+
+# --- Discord live status board (bot, edits ONE message every 15s) ---
+# Needs a BOT token (not a webhook): Discord Developer Portal -> your app ->
+# Bot -> Reset Token, then invite the bot with View Channel + Send Messages +
+# Embed Links in that channel. /allpurpose reload re-reads token/channel/
+# interval immediately (no restart). Empty bot-token = board off.
+# No-resend: the message id is stored in plugins/AllPurpose/
+# discord_status_id.txt; on boot the bot re-edits it, and if the file is lost
+# it adopts the recent board via a hidden marker instead of posting a dup.
+# On shutdown it flips the same message to OFFLINE.
+# NOTE: Discord message text cannot embed arbitrary SVG files — only unicode
+# emoji or server custom emoji, and the emoji API only accepts PNG/JPEG/GIF.
+# So the bot uploads white 128px PNGs rasterized from the Heroicons SVG set
+# (MIT) as 7 server emoji (hi_users, hi_bolt, hi_cube, hi_smile, hi_sparkles,
+# hi_online, hi_offline) on first boot and reuses them forever, then deletes
+# the old Twemoji set. The bot needs Manage Emojis permission for the one-time
+# upload; without it the board falls back to identical unicode glyphs.
+# emoji-upload: false skips the upload and always uses unicode.
+# Board has no title/footer (owner request). The quote line is the live MOTD,
+# session: is only the fallback when the MOTD is unreadable.
+discord-status:
+  enabled: true
+  bot-token: ""
+  channel-id: "1559211061553401986"
+  update-seconds: 15
+  emoji-upload: true
+  server-address: "mcpvpggg.mcsh.io"
+  session: "Secret SMP session 3"
+
+# --- Self-updater (repo-based, no SFTP needed) ---
+# Source of truth: GitHub Releases on update-repo (built by
+# .github/workflows/release.yml — every v* tag gets AllPurpose.jar +
+# checksums.txt). Flow: /allpurpose update check -> download -> restart.
+# The running jar is never touched while loaded; the staged jar replaces
+# plugins/AllPurpose.jar during a real shutdown (old jar backed up first).
+# Applies on next boot. NEVER /reload to apply — restart only.
+update-enabled: true
+update-repo: "Hushayo/AllPurpose"
+update-asset-name: "AllPurpose.jar"
+
+# --- Discord spawn snapshot (top-down spawn render, ONE message, edited) ---
+# No bot slot, no browser, no new infra: renders loaded chunks around the
+# main world's spawn to PNG and edits one message in place. Same bot token as
+# the board above. Unloaded chunks are skipped (never generated). Channel-id
+# empty = same channel as the board. /allpurpose reload applies.
+discord-snapshot:
+  enabled: true
+  channel-id: ""
+  interval-minutes: 5
+  radius-blocks: 128
+

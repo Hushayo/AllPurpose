@@ -1,0 +1,26 @@
+name: AllPurpose
+version: 2.1.0
+main: com.hush.allpurpose.AllPurpose
+api-version: '1.20'
+author: Hush
+description: Ranks-only plugin (rank ladder, tags, LP sync)
+softdepend: [TAB, PlaceholderAPI, LuckPerms, SkinsRestorer]
+commands:
+  rank:
+    description: "Manage ranks. Players use /rank to see the level-up ladder."
+    usage: /rank | /rank ladder | /rank create <name> | /rank give <player> <rank>
+    aliases: [ranks]
+  lb:
+    description: "Kill leaderboard + baltop board. /lb holo places the hologram."
+    usage: /lb [page] | /lb holo | /lb removeholo
+  allpurpose:
+    description: Core plugin controls (reload/info/update)
+    usage: /allpurpose reload | /allpurpose info | /allpurpose update <check|download|status>
+    permission: anchorfix.admin
+permissions:
+  rank.admin:
+    description: Manage ranks
+    default: op
+  anchorfix.admin:
+    description: Core admin (reload/info)
+    default: op

@@ -1,0 +1,24 @@
+Source-Available — Review Only (AllPurpose)
+
+Copyright (c) 2026 Hush. All rights reserved.
+
+Staff and reviewers may read this source to verify what the official
+build does. That is the purpose of publication.
+
+You may:
+- read the code
+- build it privately for testing against the official release
+
+You may NOT without written permission:
+- publish or distribute modified binaries/jars built from this source
+- publish a fork that presents itself as AllPurpose or an update to it
+- distribute a companion/linked plugin whose purpose is to bypass,
+  escalate, or misuse AllPurpose rank/permission behavior on servers
+  that did not explicitly opt into it
+
+Official builds are only the GitHub Releases attached to this repo
+with matching checksums.txt. Server owners should run those, not
+random recompiles.
+
+This software is provided AS-IS, without warranty. The author is not
+liable for damage from unofficial builds.
