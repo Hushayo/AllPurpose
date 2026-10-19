@@ -40,6 +40,26 @@ public class TaxCommand implements CommandExecutor, TabCompleter {
         // The fund's public face: anyone may see the balance and the patrons.
         boolean publicSub = sub.equals("balance") || sub.equals("patrons") || sub.equals("top");
 
+        // Read-only output is a screen, not a wall of chat. A player gets the
+        // GUI for every inspect sub (/tax with no args included, since that is
+        // "info"); the console - and every control sub below - keeps the
+        // plain-text path, because a chest GUI can only be opened for a player.
+        boolean inspect = sub.equals("info") || sub.equals("treasury") || sub.equals("status")
+                || sub.equals("rates") || sub.equals("ledger") || sub.equals("spends")
+                || sub.equals("grants") || sub.equals("draws");
+        if (sender instanceof Player && (publicSub || inspect)) {
+            if (!publicSub && !sender.hasPermission("allpurpose.tax.admin")) {
+                sender.sendMessage("§cNo permission (allpurpose.tax.admin).");
+                return true;
+            }
+            if (plugin.getWealthTax() == null) {
+                sender.sendMessage("§cTax manager not initialized.");
+                return true;
+            }
+            TaxGui.open((Player) sender, plugin);
+            return true;
+        }
+
         if (!publicSub && !sender.hasPermission("allpurpose.tax.admin")) {
             sender.sendMessage("§cNo permission (allpurpose.tax.admin).");
             return true;

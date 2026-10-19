@@ -30,13 +30,15 @@ public class MenuListener implements Listener {
         try { CoinFlipGui.handleClick(e, plugin); } catch (Exception ignored) {}
         try { BountyGui.handleClick(e, plugin); } catch (Exception ignored) {}
         try { ShopGui.handleClick(e, plugin); } catch (Exception ignored) {}
+        try { TaxGui.handleClick(e, plugin); } catch (Exception ignored) {}
     }
 
     @EventHandler(priority = EventPriority.LOW, ignoreCancelled = false)
     public void onDrag(InventoryDragEvent e) {
         try {
             InventoryHolder h = e.getView().getTopInventory().getHolder();
-            if (h instanceof CoinFlipGui.Holder || h instanceof BountyGui.Holder || h instanceof ShopGui.Holder) e.setCancelled(true);
+            if (h instanceof CoinFlipGui.Holder || h instanceof BountyGui.Holder
+                    || h instanceof ShopGui.Holder || h instanceof TaxGui.Holder) e.setCancelled(true);
         } catch (Exception ignored) {}
     }
 
