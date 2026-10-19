@@ -48,6 +48,8 @@ build_test2/
 dm-*.txt
 # pulled live files (contain secrets: bot tokens, passwords)
 sftp-pull/
+# local rollback copies / pulled live dumps (jars, LP exports, ops.json)
+backup/
 # --- root live dumps / debug artifacts (never commit) ---
 # Build counter churns every package run
 .buildnum
