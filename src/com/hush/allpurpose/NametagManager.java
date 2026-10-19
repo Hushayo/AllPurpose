@@ -30,6 +30,10 @@ public class NametagManager {
     }
 
     private void pushTab(Player p, String bracketedPrefix) {
+        // TAB renders tablist/nametag as prefix + NAME + suffix, so a prefix left
+        // on a colour code paints the player's name with it. Always hand it over
+        // with a reset at the end.
+        bracketedPrefix = endNameColour(bracketedPrefix);
         // TAB blocks playerListName changes, so push via its API (top priority). Reflection = no hard dependency.
         String[] apiClasses = {"com.plainvanilla.tab.api.TabAPI", "me.neznamy.tab.api.TabAPI"};
         String[] playerClasses = {"com.plainvanilla.tab.api.TabPlayer", "me.neznamy.tab.api.TabPlayer"};
@@ -71,8 +75,8 @@ public class NametagManager {
         }
         if (raw.isEmpty()) raw = tag;
         try {
-            p.setDisplayName(tag + p.getName());
-            p.playerListName(TextUtil.prefixComponent(raw).append(Component.text(p.getName())));
+            p.setDisplayName(endNameColour(tag) + p.getName());
+            p.playerListName(TextUtil.prefixComponent(endNameColour(raw)).append(Component.text(p.getName())));
         } catch (Exception ignored) {}
         if (useTabLine()) {
             applyNametag(p); // owns the TAB prefix+suffix (tag, hearts, kills)
@@ -213,10 +217,26 @@ public class NametagManager {
 
     private String tabLine(Player p) {
         try {
-            return fill(plugin.getConfig().getString("nametag.tab-line", "{prefix} {name} &8| &c{hearts} &8| &7Kills: &f{kills}"), p);
+            String tpl = plugin.getConfig().getString("nametag.tab-line", "{prefix} {name} &8| &c{hearts} &8| &7Kills: &f{kills}");
+            // Keep the prefix's colour off the name in the no-TAB fallback too.
+            if (tpl != null) tpl = tpl.replace("{prefix}", "{prefix}§r");
+            return fill(tpl, p);
         } catch (Exception e) {
             return p.getName();
         }
+    }
+
+    /**
+     * TAB renders prefix + name + suffix, so a prefix that ends on a colour code
+     * paints the player's name in that colour (rank gradients are the usual
+     * culprit: their last colour stays active). Every prefix handed over ends
+     * with §r, which only stops the colour at the name.
+     */
+    private static String endNameColour(String prefix) {
+        if (prefix == null || prefix.isEmpty()) return prefix;
+        String s;
+        try { s = TextUtil.legacy(prefix); } catch (Exception e) { s = prefix; }
+        return s.endsWith("§r") ? s : s + "§r";
     }
 
     // Hologram shows the STATS ONLY. The vanilla nametag already renders "[TAG] Name"
@@ -262,6 +282,7 @@ public class NametagManager {
         try {
             String prefix = fill(plugin.getConfig().getString("nametag.prefix", "[{prefix}] "), p);
             String suffix = fill(plugin.getConfig().getString("nametag.suffix", " &8| &c{hearts} &8| &7Kills: &f{kills} &8| &7Ping: {ping}"), p);
+            prefix = endNameColour(prefix);
             String sig = prefix + "\n" + suffix;
             String prev = tagSentTab.get(p.getUniqueId());
             long last = tagPushedAt.containsKey(p.getUniqueId()) ? tagPushedAt.get(p.getUniqueId()) : 0L;
