@@ -4,19 +4,39 @@ main: com.hush.allpurpose.AllPurpose
 api-version: '1.20'
 author: Hush
 description: Ranks-only plugin (rank ladder, tags, LP sync)
-softdepend: [TAB, PlaceholderAPI, LuckPerms, SkinsRestorer]
+softdepend: [LoginSecurity, TAB, PlaceholderAPI, LuckPerms, SkinsRestorer, Vault]
 commands:
   rank:
     description: "Manage ranks. Players use /rank to see the level-up ladder."
     usage: /rank | /rank ladder | /rank create <name> | /rank give <player> <rank>
     aliases: [ranks]
   lb:
-    description: "Kill leaderboard + baltop board. /lb holo places the hologram."
-    usage: /lb [page] | /lb holo | /lb removeholo
+    description: "Kill leaderboard + baltop board. /lb holo <board> places a hologram."
+    usage: /lb [page] | /lb holo [killtop|baltop|playtimetop|deathtop|all] | /lb removeholo [board|all]
   allpurpose:
     description: Core plugin controls (reload/info/update)
     usage: /allpurpose reload | /allpurpose info | /allpurpose update <check|download|status>
     permission: anchorfix.admin
+  coinflip:
+    description: "Coinflip GUI: wager against another player. Winner takes the pot."
+    usage: /coinflip | /coinflip <amount> | /coinflip cancel
+    aliases: [cf]
+  bounty:
+    description: "Bounties: put money on a player's head; their killer collects it."
+    usage: /bounty | /bounty <player> | /bounty <player> <amount> | /bounty top
+    aliases: [bounties]
+  tax:
+    description: "Community fund (prosperity audit): see the balance/patrons, inspect the treasury, preview/collect an event, pay out."
+    usage: "/tax [balance|patrons|info|rates|ledger|spends|draws|grants|run [confirm]|draw [confirm]|pay <p> <amt> <reason>|prize <p> <amt> <reason>|spend <amt> <note>|reload]"
+    aliases: [wealthtax]
+  setholotext:
+    description: "Free-form floating text holograms (fixed billboard, facing you)."
+    usage: "/setholotext new <id> <text> | add <text> | text|addline|setline|delline|lines <id> | move|rotate|tilt <id> | style <id> <key> <value> | list | info | tp | remove | reload"
+    aliases: [holotext, ht]
+  changelog:
+    description: "Server changelog shown as dialogs (pause menu + /changelog show)."
+    usage: "/changelog create <version> [text] | add <version> <text> | lines|setline|insertline|delline <version> ... | title|label <version> <text> | remove <version> | list | show [version] [player] | screen <on|off> | sync | reload"
+    aliases: [changelogs]
 permissions:
   rank.admin:
     description: Manage ranks
@@ -24,3 +44,27 @@ permissions:
   anchorfix.admin:
     description: Core admin (reload/info)
     default: op
+  allpurpose.coinflip:
+    description: Use the coinflip GUI
+    default: true
+  allpurpose.coinflip.admin:
+    description: Coinflip admin (/coinflip check)
+    default: op
+  allpurpose.bounty:
+    description: Use the bounty GUI
+    default: true
+  allpurpose.bounty.admin:
+    description: Bounty admin (/bounty clear, /bounty check)
+    default: op
+  allpurpose.tax.admin:
+    description: "Wealth tax admin (inspect the treasury/ledger/spends, preview + collect events, pay out of a bucket)"
+    default: op
+  allpurpose.shop:
+    description: Create and trade at chest shops
+    default: true
+  allpurpose.shop.admin:
+    description: "Chest shop admin (manage any shop, ignore the shop limit)"
+    default: op
+  allpurpose.commandguard.bypass:
+    description: "Exempt from the blocked-command guard (/effect /summon /tick rate /enchant)"
+    default: false

@@ -300,3 +300,212 @@ discord-snapshot:
   interval-minutes: 5
   radius-blocks: 128
 
+# --- Coinflip (Vault/EssentialsX economy, GUI) ---
+# /coinflip (alias /cf) opens the lobby: one player head per open wager.
+# A player wagers an amount (escrowed through Vault the moment it is created);
+# anyone can click the head to match it and a 50/50 flip decides the winner,
+# who takes the whole pot. /coinflip <amount> opens one straight away.
+# min/max-wager clamp the bet, tax-percent is the house cut off the pot,
+# expire-seconds refunds an untaken wager, presets fill the GUI buttons.
+coinflip:
+  enabled: true
+  min-wager: 100
+  max-wager: 1000000
+  tax-percent: 0
+  expire-seconds: 600
+  broadcast: true
+  announce: true
+  presets: [100, 500, 1000, 5000, 10000, 50000, 100000, 1000000]
+
+# --- Bounty (Vault/EssentialsX economy, GUI) ---
+# /bounty opens the board of hunted players; clicking a head lets you add
+# money to that player's bounty. The killer of a hunted player collects the
+# whole pot (escrowed at placement, tracked per contributor in
+# plugins/AllPurpose/bounties.yml so it survives restarts).
+# tax-percent is the house cut, broadcast/announce push the kill to chat +
+# the Discord chat log. Admin: /bounty clear <player> refunds every backer.
+bounty:
+  enabled: true
+  min-bounty: 100
+  max-bounty: 1000000000
+  tax-percent: 0
+  broadcast: true
+  announce: true
+  presets: [100, 500, 1000, 5000, 10000, 50000, 100000, 1000000]
+
+# --- Chest shops (Vault/EssentialsX economy, physical chests) ---
+# Sneak + right-click a chest/barrel/shulker to set it up. Right-click someone
+# else's shop to trade (a confirm screen opens first). /shop browses them all.
+#   SELL shop: the owner stocks the chest; buyers pay `price` for `quantity`.
+#   BUY  shop: sellers hand over `quantity` items; the owner's balance pays.
+# tax-percent is the house cut off the OWNER's side of each trade (a SELL owner
+# receives price minus tax; a BUY owner pays price plus tax).
+# max-per-player caps owned shops; override per player with the permission
+# allpurpose.shop.limit.<n> (allpurpose.shop.admin = unlimited + manage any).
+# protect-shops keeps shop chests out of explosions and pistons;
+# allow-automation false also stops hoppers draining or filling them.
+#
+# LABELS: a floating TextDisplay above each chest, drawn ON DEMAND only.
+# TextDisplays are entities, so one per shop would scale badly - instead a label
+# exists only while a player is within label-radius (plus label-hysteresis to
+# stop it flickering at the edge), capped at label-max at once, rendered with a
+# reduced client view range and never persisted. Cost follows "shops near
+# players", never the total shop count. label-mode: nearby | off.
+shop:
+  enabled: true
+  min-price: 1
+  max-price: 1000000000
+  tax-percent: 0
+  max-per-player: 5
+  allow-double-chest: true
+  protect-shops: true
+  allow-automation: false
+  log-transactions: true
+  announce-sales: false
+  preset-prices: [10, 100, 1000, 10000]
+  label-mode: nearby
+  label-radius: 12
+  label-hysteresis: 4
+  label-max: 24
+  label-update-ticks: 20
+
+# --- Wealth tax ("prosperity audit"): random, capped, PROGRESSIVE levy ---
+# Shown in chat as a "prosperity audit" event, not a punishment.
+# Ships DISABLED: set enabled: true to arm it. /allpurpose reload re-reads this.
+#
+# TIMING: one check per UTC day. Each daily check has daily-chance-percent
+# chance to actually collect, so most weeks are quiet and a tax-free week is
+# common (15% => roughly one event every 6-7 days; ~32% of weeks see nothing).
+# A fresh install never levies on its first day.
+#
+# RATES are MARGINAL/progressive: only the slice of a balance inside each band
+# is taxed, so $50,001 is never taxed as if it were a flat rate on the whole
+# balance. Default bands (the owner's table):
+#     up to  50,000            -> 0%   (new/low players pay nothing)
+#      50,000 -   100,000      -> 1%
+#     100,000 -   250,000      -> 2%
+#     250,000 and above        -> 3%   (up-to: -1 = open-ended top band)
+# Bots, the non-human accounts in AGENTS 0.1, and exempt-players are skipped.
+# max-per-event is the HARD CEILING on the per-player cap. Each event rolls its
+# own cap somewhere between cap-floor-percent% and 100% of it (60 => $15k-$25k),
+# so a whale is not hit for the identical amount every single time. The rolled
+# cap is shared by every payer in that event and is shown in the preview, so
+# /tax run confirm collects exactly what the preview promised.
+#
+# TREASURY (virtual): every deduction and deposit is written to
+# plugins/AllPurpose/tax.yml (raised / spent / per-player ledger). The ledger
+# IS the treasury - its balance is raised minus spent, with no fake bank
+# account. Payouts (/tax pay and starter grants) come out of that balance.
+#   treasury-account: ""        -> virtual ledger treasury (recommended).
+#   treasury-account: "Treasury" -> optional: hold the money in a real
+#                            Essentials account instead (flagged baltop-exempt,
+#                            so it stays off /baltop).
+#
+# PUBLIC:   /tax balance | /tax patrons   (anyone - the fund's public face)
+# INSPECT:  /tax info | /tax rates | /tax ledger | /tax spends
+# CONTROL:  /tax run (PREVIEW only) -> /tax run confirm (collects for real)
+#           /tax pay <player> <amount> <reason>   (insurance bucket)
+#           /tax prize <player> <amount> <reason> (prize bucket)
+#           /tax spend <amount> <note>            (bookkeeping only)
+# A /tax run confirm that collects also marks that UTC day as rolled, so the
+# random roll can never stack a second audit on the same day.
+tax:
+  enabled: false
+  daily-chance-percent: 15
+  max-per-event: 25000
+  # Rolled per-event cap floor, as a percent of max-per-event. 100 = always the
+  # full cap (the old, fixed behaviour). Lower = a wider random swing.
+  cap-floor-percent: 60
+  min-tax: 1
+  max-payout: 25000
+  daily-payout-cap: 50000
+  pay-repeat-window-minutes: 1440
+  announce: true
+  discord: true
+  skip-bots: true
+  exempt-players: [RevengeByRain]
+  treasury-account: ""
+  treasury-baltop-exempt: true
+  ledger-keep: 200
+  # Earmarks split every collection into sub-balances, so one purpose can never
+  # eat another. Values are normalised across the buckets given (70/20/10 == 7/2/1).
+  # /tax pay draws from "insurance", /tax prize from "prize", starter grants
+  # from "starter-grant". A payout can only ever spend its own bucket.
+  earmarks:
+    insurance: 70
+    starter-grant: 20
+    prize: 10
+  brackets:
+    - { up-to: 50000, percent: 0 }
+    - { up-to: 100000, percent: 1 }
+    - { up-to: 250000, percent: 2 }
+    - { up-to: -1, percent: 3 }
+  # Steeper example (up to 10%): replace the list above with:
+  # brackets:
+  #   - { up-to: 50000, percent: 0 }
+  #   - { up-to: 100000, percent: 2 }
+  #   - { up-to: 250000, percent: 5 }
+  #   - { up-to: -1, percent: 10 }
+  #
+  # PAYOUTS: /tax pay <player> <amount> <reason> moves treasury money to a player
+  # (grief insurance), /tax prize ... uses the prize bucket; both require a reason
+  # and record the staff member, target, bucket and note in /tax spends.
+  # max-payout caps a single payout; daily-payout-cap caps each bucket's total
+  # payouts per UTC day (0 = no cap); pay-repeat-window-minutes blocks the same
+  # staff member from paying the same player twice in that window (0 = off).
+  # A payout can never exceed its bucket, so the balance cannot go negative and
+  # payouts can never inflate the economy - the fund only shrinks or holds flat.
+
+# --- Starter grant (treasury-funded welcome for new players) ---
+# Once a NEW player reaches playtime-minutes of playtime they receive a
+# one-time grant paid out of the wealth-tax treasury's starter-grant bucket
+# (recorded as a spend, so it shows in /tax info and /tax spends, and /tax grants).
+# "New" = first joined AFTER the feature was first armed; accounts that existed
+# before it are grandfathered unless include-existing: true. With
+# require-funds: true a player waits until the starter-grant bucket can actually
+# cover the grant, so grants only start flowing after the first tax event.
+# Inspect paid grants: /tax grants
+# AFK CAVEAT (known, deferred): play_time accrues while idle, so a determined alt
+# can farm the grant. The intended fix (not yet built) is to count only ACTIVE
+# minutes - moved or interacted recently - and to cap one grant per IP or
+# Discord-linked account. Until then keep the grant disabled or the amount small.
+starter-grant:
+  enabled: false
+  playtime-minutes: 60
+  amount: 5000
+  require-funds: true
+  include-existing: false
+  announce: true
+  message: '&aWelcome, &f{player}&a! You reached &f{time} &aof playtime - the community fund grants you &f{amount}&a.'
+
+# --- Weekly prize draw (treasury-funded, one winner a week) ---
+# Every week one ACTIVE player is drawn at random and paid `amount` out of the
+# wealth-tax treasury's PRIZE bucket. It gives the prize earmark something to
+# actually spend on: audit -> 10% to prizes -> one player wins it each week.
+#
+# Eligible = appeared in Essentials userdata (so it has really played), seen
+# within active-days, lifetime playtime >= min-playtime-minutes, and not a bot
+# (bots.yml), a non-human account (mcpvpgg/ritgo_*) or the treasury account.
+# The playtime floor stops a one-login alt from winning.
+#
+# Schedule: day + hour-utc are UTC (Saturday 12:00 UTC == 20:00 local). It arms
+# on first enable, so it never pays the moment it is turned on - the first draw
+# waits for the next slot. A slot missed while the server was down is caught up
+# on the next check. If the prize bucket can't cover `amount`, the slot is
+# skipped (logged), not drained.
+#
+# Payouts go through the same path as /tax pay: capped per payout, capped per
+# day, can never exceed the prize bucket, and recorded in /tax spends.
+# Inspect: /tax draws   Preview: /tax draw   Draw now: /tax draw confirm
+# Ships DISABLED (prize-draw.enabled: false).
+prize-draw:
+  enabled: false
+  amount: 5000
+  day: saturday
+  hour-utc: 12
+  active-days: 7
+  min-playtime-minutes: 120
+  exclude-players: []
+  announce: true
+  discord: true
+

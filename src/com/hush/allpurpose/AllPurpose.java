@@ -15,7 +15,18 @@ public class AllPurpose extends JavaPlugin {
     private DiscordWebhook webhook;
     private DiscordStatusBoard statusBoard;
     private DiscordChatLog chatLog;
+    private SpectatorCam spectatorCam;
+    private AuthAutoLogin authAutoLogin;
     private SpawnSnapshot spawnSnapshot;
+    private CoinFlipManager coinflip;
+    private BountyManager bounty;
+    private ShopManager shop;
+    private ShopLabels shopLabels;
+    private HoloTextManager holoText;
+    private ChangelogManager changelog;
+    private WealthTaxManager wealthTax;
+    private StarterGrantManager starterGrant;
+    private PrizeDrawManager prizeDraw;
 
     private AllPurposeAPI api;
 
@@ -58,8 +69,48 @@ public class AllPurpose extends JavaPlugin {
         return chatLog;
     }
 
+    public SpectatorCam getSpectatorCam() {
+        return spectatorCam;
+    }
+
     public SpawnSnapshot getSpawnSnapshot() {
         return spawnSnapshot;
+    }
+
+    public CoinFlipManager getCoinflip() {
+        return coinflip;
+    }
+
+    public BountyManager getBounty() {
+        return bounty;
+    }
+
+    public ShopManager getShop() {
+        return shop;
+    }
+
+    public ShopLabels getShopLabels() {
+        return shopLabels;
+    }
+
+    public HoloTextManager getHoloText() {
+        return holoText;
+    }
+
+    public ChangelogManager getChangelog() {
+        return changelog;
+    }
+
+    public WealthTaxManager getWealthTax() {
+        return wealthTax;
+    }
+
+    public StarterGrantManager getStarterGrant() {
+        return starterGrant;
+    }
+
+    public PrizeDrawManager getPrizeDraw() {
+        return prizeDraw;
     }
 
     public String rankDisplayName(UUID id) {
@@ -191,6 +242,15 @@ public class AllPurpose extends JavaPlugin {
     @Override
     public void onLoad() {
         // Ranks-only: no snapshot staging.
+        // Changelog: the pause-menu copy lives in a generated datapack, and
+        // datapacks are read LATER in startup than plugin onLoad - so writing it
+        // here means a plain restart is enough for the pause menu to pick it up.
+        try {
+            changelog = new ChangelogManager(this);
+            changelog.writeDatapack();
+        } catch (Exception e) {
+            getLogger().warning("Changelog init failed: " + e.getMessage());
+        }
     }
 
     @Override
@@ -219,6 +279,14 @@ public class AllPurpose extends JavaPlugin {
         // LpExpiryNotifier whispers when temp ranks lapse.
         ranks = new RankManager(this);
         leaderboard = new LeaderboardManager(this);
+        // Free-form floating text (/setholotext): sweep our tagged displays
+        // (crash orphans) then respawn every saved one at its exact spot.
+        holoText = new HoloTextManager(this);
+        try { holoText.boot(); } catch (Exception e) { getLogger().warning("HoloText init failed: " + e.getMessage()); }
+        // Server changelog dialogs (/changelog). Already generated in onLoad;
+        // re-generate now that worlds + config are loaded.
+        if (changelog == null) { try { changelog = new ChangelogManager(this); } catch (Exception ignored) {} }
+        try { if (changelog != null) changelog.boot(); } catch (Exception e) { getLogger().warning("Changelog init failed: " + e.getMessage()); }
         webhook = new DiscordWebhook(this);
         try { leaderboard.refreshBalTop(); } catch (Exception ignored) {}
         try {
@@ -226,6 +294,7 @@ public class AllPurpose extends JavaPlugin {
                 @Override public void run() {
                     try { leaderboard.refreshBalTop(); } catch (Exception ignored) {}
                     try { leaderboard.updateHolo(); } catch (Exception ignored) {}
+                    try { holoText.tick(); } catch (Exception ignored) {}
                 }
             }, 1200L, 1200L);
         } catch (Exception ignored) {}
@@ -236,10 +305,44 @@ public class AllPurpose extends JavaPlugin {
         statusBoard.start();
         chatLog = new DiscordChatLog(this);
         spawnSnapshot = new SpawnSnapshot(this);
+        spectatorCam = new SpectatorCam(this);
+        spectatorCam.start();
+        authAutoLogin = new AuthAutoLogin(this);
+        try { getServer().getPluginManager().registerEvents(authAutoLogin, this); } catch (Exception ignored) {}
+        // Money systems (Vault / EssentialsX Economy): coinflip GUI + bounties.
+        coinflip = new CoinFlipManager(this);
+        try { coinflip.start(); } catch (Exception e) { getLogger().warning("Coinflip init failed: " + e.getMessage()); }
+        bounty = new BountyManager(this);
+        try { bounty.start(); } catch (Exception e) { getLogger().warning("Bounty init failed: " + e.getMessage()); }
+        try { getServer().getPluginManager().registerEvents(bounty, this); } catch (Exception ignored) {}
+        // Wealth tax ("prosperity audit"): random, capped, progressive levy on
+        // the richest visible balances, funding a public treasury. Ships
+        // DISABLED (tax.enabled: false).
+        wealthTax = new WealthTaxManager(this);
+        try { wealthTax.start(); } catch (Exception e) { getLogger().warning("Tax init failed: " + e.getMessage()); }
+        // Community-fund welcome: a one-time, treasury-funded grant once a new
+        // player has played long enough. Ships DISABLED (starter-grant.enabled).
+        starterGrant = new StarterGrantManager(this);
+        try { starterGrant.start(); } catch (Exception e) { getLogger().warning("StarterGrant init failed: " + e.getMessage()); }
+        try { getServer().getPluginManager().registerEvents(starterGrant, this); } catch (Exception ignored) {}
+        // Weekly prize draw: one ACTIVE player wins the prize bucket each week.
+        // Ships DISABLED (prize-draw.enabled: false).
+        prizeDraw = new PrizeDrawManager(this);
+        try { prizeDraw.start(); } catch (Exception e) { getLogger().warning("PrizeDraw init failed: " + e.getMessage()); }
+        // Chest shops: physical player stalls on top of the same Vault economy.
+        shop = new ShopManager(this);
+        try { shop.start(); } catch (Exception e) { getLogger().warning("Shop init failed: " + e.getMessage()); }
+        try { getServer().getPluginManager().registerEvents(new ShopListener(this), this); } catch (Exception ignored) {}
+        shopLabels = new ShopLabels(this);
+        try { shopLabels.start(); } catch (Exception e) { getLogger().warning("Shop labels init failed: " + e.getMessage()); }
+        try { getServer().getPluginManager().registerEvents(new MenuListener(this), this); } catch (Exception ignored) {}
         spawnSnapshot.start();
         updater = new UpdateManager(this);
         try { updater.announcePendingOnBoot(); } catch (Exception ignored) {}
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
+        // Opped players ignore LP denials for vanilla commands, so those are
+        // cancelled here instead (staff: /effect /summon /tick rate /enchant).
+        try { getServer().getPluginManager().registerEvents(new CommandGuard(this), this); } catch (Exception ignored) {}
         try { getServer().getPluginManager().registerEvents(webhook, this); } catch (Exception ignored) {}
         try { if (chatLog != null) getServer().getPluginManager().registerEvents(chatLog, this); } catch (Exception ignored) {}
         RankCommand rankCmd = new RankCommand(this);
@@ -256,6 +359,35 @@ public class AllPurpose extends JavaPlugin {
         if (getCommand("lb") != null) {
             getCommand("lb").setExecutor(lbCmd);
             getCommand("lb").setTabCompleter(lbCmd);
+        }
+        CoinFlipCommand cfCmd = new CoinFlipCommand(this);
+        if (getCommand("coinflip") != null) {
+            getCommand("coinflip").setExecutor(cfCmd);
+            getCommand("coinflip").setTabCompleter(cfCmd);
+        }
+        BountyCommand bountyCmd = new BountyCommand(this);
+        if (getCommand("bounty") != null) {
+            getCommand("bounty").setExecutor(bountyCmd);
+            getCommand("bounty").setTabCompleter(bountyCmd);
+        }
+        TaxCommand taxCmd = new TaxCommand(this);
+        if (getCommand("tax") != null) {
+            getCommand("tax").setExecutor(taxCmd);
+            getCommand("tax").setTabCompleter(taxCmd);
+        }
+        // NOTE: AllPurpose deliberately does NOT register a /shop command.
+        // /shop belongs to EconomyShopGUI; the chest shops are physical only
+        // (sneak + right-click a container), so there is no wireless global
+        // shop browser to buy from anywhere.
+        HoloTextCommand holoTextCmd = new HoloTextCommand(this);
+        if (getCommand("setholotext") != null) {
+            getCommand("setholotext").setExecutor(holoTextCmd);
+            getCommand("setholotext").setTabCompleter(holoTextCmd);
+        }
+        ChangelogCommand changelogCmd = new ChangelogCommand(this);
+        if (getCommand("changelog") != null) {
+            getCommand("changelog").setExecutor(changelogCmd);
+            getCommand("changelog").setTabCompleter(changelogCmd);
         }
         // Nametag (rank tags). Clean up tag holograms orphaned by a
         // /reload or a crash, then keep them in sync.
@@ -288,7 +420,17 @@ public class AllPurpose extends JavaPlugin {
         try { RconSpamFilter.uninstall(); } catch (Exception ignored) {}
         try { if (statusBoard != null) statusBoard.markOfflineSync(); } catch (Exception ignored) {}
         try { if (statusBoard != null) statusBoard.shutdown(); } catch (Exception ignored) {}
+        try { if (coinflip != null) coinflip.shutdown(); } catch (Exception ignored) {}
+        try { if (bounty != null) bounty.shutdown(); } catch (Exception ignored) {}
+        try { if (wealthTax != null) wealthTax.shutdown(); } catch (Exception ignored) {}
+        try { if (starterGrant != null) starterGrant.shutdown(); } catch (Exception ignored) {}
+        try { if (prizeDraw != null) prizeDraw.shutdown(); } catch (Exception ignored) {}
+        try { if (shopLabels != null) shopLabels.shutdown(); } catch (Exception ignored) {}
+        try { if (shop != null) shop.shutdown(); } catch (Exception ignored) {}
+        try { if (spectatorCam != null) spectatorCam.shutdown(); } catch (Exception ignored) {}
         try { if (spawnSnapshot != null) spawnSnapshot.shutdown(); } catch (Exception ignored) {}
+        try { if (holoText != null) holoText.shutdown(); } catch (Exception ignored) {}
+        try { if (changelog != null) changelog.shutdown(); } catch (Exception ignored) {}
         try { if (leaderboard != null) leaderboard.shutdown(); } catch (Exception ignored) {}
         try { if (lpExpiry != null) lpExpiry.shutdown(); } catch (Exception ignored) {}
         try { if (nametag != null) nametag.clearOrphanTagHolo(); } catch (Exception ignored) {}
