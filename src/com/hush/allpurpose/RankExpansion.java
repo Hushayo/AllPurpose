@@ -24,7 +24,7 @@ public class RankExpansion extends PlaceholderExpansion {
 
     @Override
     public String getVersion() {
-        return "1.5.0";
+        return "1.6.0";
     }
 
     @Override
@@ -88,6 +88,16 @@ public class RankExpansion extends PlaceholderExpansion {
                 int d = plugin.getLeaderboard().lbDeaths(id);
                 if (d <= 0) return String.valueOf(k);
                 return String.format(java.util.Locale.ROOT, "%.2f", (double) k / (double) d);
+            } catch (Exception e) { return "0"; }
+        }
+        // Money from the server economy (Vault / EssentialsX), shortened for the
+        // sidebar: 98812.65 -> "98.8K", 1200000 -> "1.2M", 1.2e9 -> "1.2B".
+        //   balance / bal / money   -> short
+        if (np.equals("balance") || np.equals("bal") || np.equals("money")) {
+            try {
+                net.milkbowl.vault.economy.Economy e = Menus.economy();
+                if (e == null) return "0";
+                return Menus.shortNumber(e.getBalance(p));
             } catch (Exception e) { return "0"; }
         }
         if (np.equals("playtime")) {
