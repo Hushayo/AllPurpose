@@ -27,6 +27,8 @@ public class AllPurpose extends JavaPlugin {
     private WealthTaxManager wealthTax;
     private StarterGrantManager starterGrant;
     private PrizeDrawManager prizeDraw;
+    private CropMarket cropMarket;
+    private CropMarketBoard cropMarketBoard;
 
     private AllPurposeAPI api;
 
@@ -111,6 +113,16 @@ public class AllPurpose extends JavaPlugin {
 
     public PrizeDrawManager getPrizeDraw() {
         return prizeDraw;
+    }
+
+    /** Crops market: supply-driven crop shop sell prices. */
+    public CropMarket getCropMarket() {
+        return cropMarket;
+    }
+
+    /** The ONE Discord message the crops market edits in place. */
+    public CropMarketBoard getCropMarketBoard() {
+        return cropMarketBoard;
     }
 
     public String rankDisplayName(UUID id) {
@@ -337,6 +349,13 @@ public class AllPurpose extends JavaPlugin {
         try { shopLabels.start(); } catch (Exception e) { getLogger().warning("Shop labels init failed: " + e.getMessage()); }
         try { getServer().getPluginManager().registerEvents(new MenuListener(this), this); } catch (Exception ignored) {}
         spawnSnapshot.start();
+        // Crops market: the crop shop's SELL prices follow real supply
+        // (EconomyShopGUI transactions). Prices are written through the shop
+        // plugin's own /editshop command; the board is ONE edited message.
+        cropMarket = new CropMarket(this);
+        try { cropMarket.start(); } catch (Exception e) { getLogger().warning("Crops market init failed: " + e.getMessage()); }
+        cropMarketBoard = new CropMarketBoard(this);
+        try { cropMarketBoard.start(); } catch (Exception e) { getLogger().warning("Crops market board init failed: " + e.getMessage()); }
         updater = new UpdateManager(this);
         try { updater.announcePendingOnBoot(); } catch (Exception ignored) {}
         getServer().getPluginManager().registerEvents(new PlayerListener(this), this);
@@ -374,6 +393,11 @@ public class AllPurpose extends JavaPlugin {
         if (getCommand("tax") != null) {
             getCommand("tax").setExecutor(taxCmd);
             getCommand("tax").setTabCompleter(taxCmd);
+        }
+        CropMarketCommand cropsCmd = new CropMarketCommand(this);
+        if (getCommand("cropsmarket") != null) {
+            getCommand("cropsmarket").setExecutor(cropsCmd);
+            getCommand("cropsmarket").setTabCompleter(cropsCmd);
         }
         // NOTE: AllPurpose deliberately does NOT register a /shop command.
         // /shop belongs to EconomyShopGUI; the chest shops are physical only
@@ -429,6 +453,8 @@ public class AllPurpose extends JavaPlugin {
         try { if (shop != null) shop.shutdown(); } catch (Exception ignored) {}
         try { if (spectatorCam != null) spectatorCam.shutdown(); } catch (Exception ignored) {}
         try { if (spawnSnapshot != null) spawnSnapshot.shutdown(); } catch (Exception ignored) {}
+        try { if (cropMarketBoard != null) cropMarketBoard.shutdown(); } catch (Exception ignored) {}
+        try { if (cropMarket != null) cropMarket.shutdown(); } catch (Exception ignored) {}
         try { if (holoText != null) holoText.shutdown(); } catch (Exception ignored) {}
         try { if (changelog != null) changelog.shutdown(); } catch (Exception ignored) {}
         try { if (leaderboard != null) leaderboard.shutdown(); } catch (Exception ignored) {}
