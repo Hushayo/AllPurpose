@@ -31,7 +31,7 @@ commands:
     aliases: [wealthtax]
   setholotext:
     description: "Free-form floating text holograms (fixed billboard, facing you)."
-    usage: "/setholotext new <id> <text> | add <text> | text|addline|setline|delline|lines <id> | move|rotate|tilt <id> | style <id> <key> <value> | list | info | tp | remove | reload"
+    usage: "/setholotext new <id> <text> | add <text> | text|addline|setline|delline|lines <id> | move|rotate|tilt <id> | style <id> <key> <value> | select <id> [360|none] | list | info | tp | remove | reload"
     aliases: [holotext, ht]
   changelog:
     description: "Server changelog shown as dialogs (pause menu + /changelog show)."

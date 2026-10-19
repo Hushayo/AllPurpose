@@ -410,7 +410,8 @@ public class HoloTextManager {
     private static Display.Billboard billboardOf(String v) {
         if (v != null) {
             switch (TextUtil.norm(v)) {
-                case "center": case "centre": case "look": case "camera": return Display.Billboard.CENTER;
+                case "center": case "centre": case "look": case "camera": case "360": case "all":
+                    return Display.Billboard.CENTER;
                 case "vertical": case "v": return Display.Billboard.VERTICAL;
                 case "horizontal": case "h": return Display.Billboard.HORIZONTAL;
                 default: return Display.Billboard.FIXED;

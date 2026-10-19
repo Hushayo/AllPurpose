@@ -2,7 +2,9 @@ package com.hush.allpurpose;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import org.bukkit.Location;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -12,16 +14,27 @@ import org.bukkit.entity.Player;
 
 /**
  * /setholotext - free-form floating text. Text + look are set entirely with
- * commands (nothing is hardcoded), the display is billboard FIXED so it does
- * not sway with the camera, and it is oriented to the placer's view.
+ * commands (nothing is hardcoded), the display is billboard FIXED by default so
+ * it does not sway with the camera, and it is oriented to the placer's view.
+ * {@code select <id> 360} switches that hologram to a camera-facing billboard
+ * so it is readable from every angle; {@code select <id> none} puts it back.
  */
 public class HoloTextCommand implements CommandExecutor, TabCompleter {
 
     private static final List<String> SUBS = Arrays.asList(
             "new", "add", "text", "addline", "insertline", "setline", "delline", "lines",
-            "move", "rotate", "tilt", "style", "list", "info", "tp", "remove", "reload", "help");
+            "move", "rotate", "tilt", "style", "select", "list", "info", "tp", "remove",
+            "reload", "help");
+
+    /** Subs whose first argument is a hologram id (so a selection can fill it in). */
+    private static final List<String> ID_SUBS = Arrays.asList(
+            "text", "addline", "insertline", "setline", "delline", "lines",
+            "move", "rotate", "tilt", "style", "info", "tp");
 
     private final AllPurpose plugin;
+
+    /** Who is working on which hologram (so the id can be left out). */
+    private final Map<String, String> selected = new HashMap<>();
 
     public HoloTextCommand(AllPurpose plugin) {
         this.plugin = plugin;
@@ -44,6 +57,10 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
 
         if (sub.equals("help")) { help(sender, label); return true; }
 
+        // `/setholotext select <id>` remembers the hologram, so the id can be
+        // left out of every id-taking subcommand afterwards.
+        args = withSelectedId(sender, sub, args, m);
+
         if (sub.equals("reload")) {
             m.reload();
             sender.sendMessage("§aHoloText reloaded from disk: §f" + m.ids().size() + "§a hologram(s) restored.");
@@ -58,8 +75,51 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
                 Location l = m.loc(id);
                 String where = l == null ? "§c(unloaded world)" :
                         "§7" + l.getWorld().getName() + " §f" + round(l.getX()) + " " + round(l.getY()) + " " + round(l.getZ());
-                sender.sendMessage("§e" + id + " §8- " + where + " §8| §7" + m.lines(id).size() + " line(s)");
+                sender.sendMessage("§e" + id + " §8- " + where + " §8| §7" + m.lines(id).size() + " line(s)"
+                        + " §8| §7" + rotationLabel(m, id));
             }
+            return true;
+        }
+
+        // `/setholotext select <id>` remembers the hologram (so the id can be
+        // omitted later); the optional second word sets how it faces:
+        //   360  -> billboard center: turns to face every player, readable all round
+        //   none -> billboard fixed: one baked rotation, front only
+        if (sub.equals("select")) {
+            if (args.length < 2) {
+                String cur = selected.get(key(sender));
+                if (cur == null || !m.exists(cur)) {
+                    selected.remove(key(sender));
+                    sender.sendMessage("§7Nothing selected. §f/" + label + " select <id> [360|none]");
+                } else {
+                    sender.sendMessage("§7Selected: §f" + cur + " §8| §7facing: §f" + rotationLabel(m, cur));
+                }
+                return true;
+            }
+            String id = TextUtil.norm(args[1]);
+            if (!m.exists(id)) { noSuch(sender, id); return true; }
+            selected.put(key(sender), id);
+
+            if (args.length < 3) {
+                sender.sendMessage("§aSelected §f" + id + "§a. §7facing: §f" + rotationLabel(m, id));
+                sender.sendMessage("§7Turn it: §f/" + label + " select " + id + " 360 §7(faces all angles) §8| §f"
+                        + label + " select " + id + " none §7(fixed)");
+                return true;
+            }
+
+            String mode = TextUtil.norm(args[2]);
+            String billboard;
+            if (mode.equals("360") || mode.equals("all") || mode.equals("center") || mode.equals("centre")) {
+                billboard = "center";
+            } else if (mode.equals("none") || mode.equals("fixed") || mode.equals("off")) {
+                billboard = "fixed";
+            } else {
+                sender.sendMessage("§cUse §f360 §c(faces all angles) or §fnone §c(fixed).");
+                return true;
+            }
+            m.setStyle(id, "billboard", billboard);
+            m.refresh(id);
+            sender.sendMessage("§a§f" + id + " §a-> facing §f" + (billboard.equals("center") ? "360° (faces all angles)" : "none (fixed)"));
             return true;
         }
 
@@ -75,6 +135,7 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
                         + " §7yaw: §f" + round(l.getYaw()) + " §7pitch: §f" + round(l.getPitch()));
             }
             sender.sendMessage("§7lines: §f" + m.lines(id).size());
+            sender.sendMessage("§7facing: §f" + rotationLabel(m, id));
             java.util.Map<String, String> st = m.styles(id);
             if (st.isEmpty()) sender.sendMessage("§7style: §f(all defaults)");
             else for (java.util.Map.Entry<String, String> e : st.entrySet())
@@ -108,6 +169,7 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
                     : new ArrayList<>(Arrays.asList("&f" + id));
             Location at = placeAt(p, lines.size());
             m.create(id, at, lines);
+            selected.put(key(sender), id);
             if (m.entity(id) == null && !chunkLoaded(at)) {
                 sender.sendMessage("§ePlaced, but its chunk is not loaded - it will appear as soon as the chunk loads.");
             }
@@ -261,11 +323,18 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
             String id = TextUtil.norm(args[1]);
             if (id.equals("all") || id.equals("*")) {
                 m.removeAll();
+                selected.clear();
                 sender.sendMessage("§aAll holograms removed.");
                 return true;
             }
+            if (id.equals(".") || id.equals("-")) {
+                String sel = selection(sender, m);
+                if (sel == null) { sender.sendMessage("§cNothing selected - use §f/" + label + " select <id>§c."); return true; }
+                id = sel;
+            }
             if (!m.exists(id)) { noSuch(sender, id); return true; }
             m.remove(id);
+            if (id.equals(selected.get(key(sender)))) selected.remove(key(sender));
             sender.sendMessage("§aRemoved holotext §f" + id + "§a.");
             return true;
         }
@@ -276,9 +345,94 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
 
     // ---------- helpers ----------
 
+    /** Stable per-sender key (players by UUID, console by name). */
+    private static String key(CommandSender sender) {
+        return sender instanceof Player
+                ? ((Player) sender).getUniqueId().toString()
+                : "console:" + sender.getName().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /**
+     * If the sender has a selection and this sub takes an id that was omitted,
+     * splice the remembered id in as args[1]; everything downstream then works
+     * unchanged. Only spliced where it cannot be confused with an explicit id:
+     * a bare `/text` (nothing else given), or `rotate|tilt <angle>` /
+     * `style <key>`. Text editors always require the id (or the `.` shortcut)
+     * so a mistyped id can never silently rewrite the selected hologram.
+     */
+    private String[] withSelectedId(CommandSender sender, String sub, String[] args, HoloTextManager m) {
+        if (!ID_SUBS.contains(sub)) return args;
+        String sel = selection(sender, m);
+        if (sel == null) return args;
+        if (args.length >= 2) {
+            String a1 = TextUtil.norm(args[1]);
+            if (a1.equals(".") || a1.equals("-")) {            // explicit "the selected one"
+                String[] out = args.clone();
+                out[1] = sel;
+                return out;
+            }
+            if (m.exists(a1)) return args;                     // explicit id wins
+            if (!looksIdLess(sub, a1)) return args;
+        }
+        String[] out = new String[args.length + 1];
+        out[0] = args[0];
+        out[1] = sel;
+        System.arraycopy(args, 1, out, 2, args.length - 1);
+        return out;
+    }
+
+    /** The sender's still-existing selection, or null (pruning a stale one). */
+    private String selection(CommandSender sender, HoloTextManager m) {
+        String sel = selected.get(key(sender));
+        if (sel == null) return null;
+        if (!m.exists(sel)) { selected.remove(key(sender)); return null; }
+        return sel;
+    }
+
+    /** Is args[1] an id-less form of this sub rather than an id? */
+    private static boolean looksIdLess(String sub, String a1) {
+        if (sub.equals("rotate") || sub.equals("tilt")) return isAngle(a1);
+        if (sub.equals("style")) return HoloTextManager.STYLE_KEYS.contains(a1);
+        return false;
+    }
+
+    private static boolean isAngle(String v) {
+        switch (v) {
+            case "here": case "left": case "right": case "flip": case "around":
+            case "north": case "south": case "east": case "west":
+                return true;
+            default:
+                try { Float.parseFloat(v); return true; }
+                catch (Exception e) { return false; }
+        }
+    }
+
+    /** Human label for how a hologram faces. */
+    private String rotationLabel(HoloTextManager m, String id) {
+        String v = m.style(id, "billboard");
+        if (v == null) {
+            v = plugin.getConfig().getString("holotext.default-billboard", "fixed");
+            if (v == null) v = "fixed";
+            String d = rotationLabel(v);
+            return d + " §8(default)";
+        }
+        return rotationLabel(v);
+    }
+
+    private static String rotationLabel(String raw) {
+        switch (TextUtil.norm(raw)) {
+            case "center": case "centre": case "look": case "camera": case "360":
+                return "360° (faces all angles)";
+            case "vertical": case "v": return "vertical";
+            case "horizontal": case "h": return "horizontal";
+            default: return "none (fixed)";
+        }
+    }
+
     private static String idArg(CommandSender sender, String label, String sub, String[] args, int minArgs, HoloTextManager m) {
         if (args.length < minArgs) {
-            sender.sendMessage("§cUsage: /" + label + " " + sub + " <id>" + (sub.equals("style") ? " <key> [value]" : " ..."));
+            sender.sendMessage("§cUsage: /" + label + " " + sub + " <id>" + (sub.equals("style") ? " <key> [value]" : " ...")
+                    + " §7(selected: §f" + sub + " .§7 ...)");
             return null;
         }
         String id = TextUtil.norm(args[1]);
@@ -356,8 +510,8 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
         String v = TextUtil.norm(value);
         switch (key) {
             case "billboard":
-                if (!Arrays.asList("fixed", "center", "centre", "vertical", "horizontal").contains(v))
-                    return "billboard must be: fixed | center | vertical | horizontal";
+                if (!Arrays.asList("fixed", "center", "centre", "vertical", "horizontal", "360", "none").contains(v))
+                    return "billboard must be: fixed | center | vertical | horizontal | 360 | none";
                 return null;
             case "align":
                 if (!Arrays.asList("center", "left", "right").contains(v))
@@ -387,7 +541,7 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
 
     private static void styleHelp(CommandSender sender, String label, String id) {
         sender.sendMessage("§6§lHOLOTEXT STYLE §8- §f" + id);
-        sender.sendMessage("§7/" + label + " style " + id + " billboard §f<fixed|center|vertical|horizontal>");
+        sender.sendMessage("§7/" + label + " style " + id + " billboard §f<fixed|center|vertical|horizontal|360|none>");
         sender.sendMessage("§7/" + label + " style " + id + " align §f<center|left|right>");
         sender.sendMessage("§7/" + label + " style " + id + " background §f<#AARRGGBB|#RRGGBB|none|default>");
         sender.sendMessage("§7/" + label + " style " + id + " linewidth §f<1-1000>");
@@ -405,6 +559,8 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
         sender.sendMessage("§e/" + label + " addline|insertline|setline|delline|lines <id> ... §7- edit line by line");
         sender.sendMessage("§e/" + label + " move|rotate|tilt <id> ... §7- reposition / turn");
         sender.sendMessage("§e/" + label + " style <id> <key> <value> §7- look (background, scale, ...)");
+        sender.sendMessage("§e/" + label + " select <id> [360|none] §7- remember it + how it faces (§f360§7 = all angles)");
+        sender.sendMessage("§7After §fselect§7: §f/" + label + " text . <text> §7or §fstyle scale 2 §7- §f.§7 = the selected one");
         sender.sendMessage("§e/" + label + " list|info|tp <id>|remove <id|all>|reload");
         sender.sendMessage("§7Colours: §f&6&l §7/ §f#FFAA00 §7/ §f<gradient:#FFAA00:#FF5555>text</gradient>");
     }
@@ -428,15 +584,20 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
         boolean wantsId = Arrays.asList("text", "addline", "insertline", "setline", "delline",
                 "lines", "move", "rotate", "tilt", "style", "info", "tp").contains(sub);
         boolean removeSub = sub.equals("remove");
+        boolean selectSub = sub.equals("select");
 
         if (args.length == 2) {
             if (wantsId) {
                 for (String cand : m.ids()) if (cand.startsWith(cur)) out.add(cand);
-            } else if (removeSub) {
+            } else if (removeSub || selectSub) {
                 for (String cand : m.ids()) if (cand.startsWith(cur)) out.add(cand);
-                if ("all".startsWith(cur)) out.add("all");
+                if (removeSub && "all".startsWith(cur)) out.add("all");
             }
             return out;
+        }
+
+        if (selectSub && args.length == 3) {
+            return filter(Arrays.asList("360", "none"), cur);
         }
 
         if (sub.equals("style") && args.length == 3) {
@@ -446,7 +607,7 @@ public class HoloTextCommand implements CommandExecutor, TabCompleter {
         if (sub.equals("style") && args.length == 4) {
             String key = TextUtil.norm(args[2]);
             switch (key) {
-                case "billboard": return filter(Arrays.asList("fixed", "center", "vertical", "horizontal"), cur);
+                case "billboard": return filter(Arrays.asList("fixed", "center", "vertical", "horizontal", "360", "none"), cur);
                 case "align": return filter(Arrays.asList("center", "left", "right"), cur);
                 case "background": return filter(Arrays.asList("#80000000", "#00000000", "default", "none"), cur);
                 case "seethrough": case "shadow": case "glow": return filter(Arrays.asList("true", "false"), cur);
