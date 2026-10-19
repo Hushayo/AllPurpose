@@ -300,42 +300,6 @@ discord-snapshot:
   interval-minutes: 5
   radius-blocks: 128
 
-# --- Crops market (the crop shop's sell prices follow real supply) ---
-# EconomyShopGUI fires an event per shop trade; the market tallies the SELL
-# volume per crop and moves that crop's price: heavily farmed crops slide toward
-# min-multiplier, quiet ones drift back toward base (slowly, at most
-# recovery-percent per review). Nothing is written unless the computed price
-# actually differs, and it goes through EconomyShopGUI's OWN admin command
-# (/editshop edititem <section> <page>.items.<key> set sell <v>) followed by
-# /sreload - so the shop file keeps the plugin's own format.
-# A price that no longer matches what the bot wrote is treated as YOUR edit and
-# adopted as the new base (manual changes always win); /cropsmarket reset undoes
-# the automation - every multiplier back to 1x and moved prices restored to base.
-# heavy-volume = units sold in one window that push a price to the floor. Live
-# crop volume is very uneven (~68k sugar cane/day, ~24k cactus, ~9k kelp,
-# ~500 carrot, ~70 wheat), so raising this softens the effect on the big farms.
-# The board is ONE message in the channel, edited in place forever (empty
-# channel-id = discord-status.channel-id). Crop emoji are uploaded lazily from
-# bundled item textures; board-emoji-limit caps how much of the guild's emoji
-# budget they may use, and any crop without one falls back to a unicode glyph.
-crops-market:
-  enabled: true
-  shop-section: crops
-  shops-file: "plugins/EconomyShopGUI/shops/Farming/crops.yml"
-  review-minutes: 60
-  heavy-volume: 500
-  min-multiplier: 0.4
-  max-multiplier: 1.2
-  step-percent: 15
-  recovery-percent: 5
-  min-price: 0.01
-  board: true
-  channel-id: ""
-  board-minutes: 5
-  board-emoji: true
-  board-emoji-per-run: 4
-  board-emoji-limit: 40
-
 # --- Coinflip (Vault/EssentialsX economy, GUI) ---
 # /coinflip (alias /cf) opens the lobby: one player head per open wager.
 # A player wagers an amount (escrowed through Vault the moment it is created);

@@ -874,73 +874,6 @@ public class DiscordStatusBoard {
         } catch (Exception ignored) {}
     }
 
-    // ---------- shared guild-emoji helpers (other board-like messages) ----------
-
-    /**
-     * Cached guild-emoji id for a name, or null. Other in-channel messages
-     * (the crop market board) reuse the board's one-time emoji upload so the
-     * guild only ever holds one copy of each icon.
-     */
-    public String emojiId(String name) {
-        try {
-            if (name == null) return null;
-            String id = emojiIds.get(name);
-            return (id != null && id.matches("\\d{10,25}")) ? id : null;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /** {@code <:name:id>} for a cached emoji, or null - callers fall back to unicode. */
-    public String emojiTag(String name) {
-        String id = emojiId(name);
-        return id == null ? null : "<:" + name + ":" + id + ">";
-    }
-
-    /** Number of cached emoji ids starting with a prefix (guild budget guard). */
-    public int emojiCount(String prefix) {
-        try {
-            int n = 0;
-            for (String k : emojiIds.keySet()) {
-                if (k != null && k.startsWith(prefix)) n++;
-            }
-            return n;
-        } catch (Exception e) {
-            return 0;
-        }
-    }
-
-    /**
-     * Upload one PNG as a guild emoji ONCE and cache it (idempotent). Returns
-     * the emoji id or null (board off, no Manage Emojis permission, rate limit,
-     * guild emoji budget full). Runs HTTP: never call this from the main thread.
-     */
-    public String uploadEmoji(String name, byte[] png) {
-        try {
-            if (name == null || !name.matches("(?:hi|ap|crop)_[a-z0-9_]{1,26}")) return null;
-            if (png == null || png.length < 100) return null;
-            String have = emojiId(name);
-            if (have != null) return have;
-            if (emojiIds.isEmpty()) loadEmojiCache();
-            if (token().isEmpty() || channelId().isEmpty()) return null;
-            String guildId = resolveGuildId();
-            if (guildId == null) return null;
-            String existing = listEmojiId(guildId, name);
-            if (existing != null) {
-                emojiIds.put(name, existing);
-                saveEmojiCache();
-                return existing;
-            }
-            String created = createEmoji(guildId, name, png);
-            if (created == null) return null;
-            emojiIds.put(name, created);
-            saveEmojiCache();
-            return created;
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     // ---------- server-emoji upload (SVG -> PNG -> guild emoji, once) ----------
 
     private File emojiFile() {
@@ -952,7 +885,7 @@ public class DiscordStatusBoard {
             File f = emojiFile();
             if (!f.exists()) return;
             String s = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
-            Matcher m = Pattern.compile("\"((?:hi|ap|crop)_[a-z0-9_]+)\"\\s*:\\s*\"(\\d{10,25})\"").matcher(s);
+            Matcher m = Pattern.compile("\"((?:hi|ap)_[a-z]+)\"\\s*:\\s*\"(\\d{10,25})\"").matcher(s);
             while (m.find()) emojiIds.put(m.group(1), m.group(2));
         } catch (Exception ignored) {}
     }
@@ -961,13 +894,12 @@ public class DiscordStatusBoard {
         try {
             StringBuilder b = new StringBuilder("{");
             boolean first = true;
-            for (String name : new java.util.TreeSet<>(emojiIds.keySet())) {
-                if (name == null || !name.matches("(?:hi|ap|crop)_[a-z0-9_]+")) continue;
-                String id = emojiIds.get(name);
+            for (String[] icon : ICONS) {
+                String id = emojiIds.get(icon[0]);
                 if (id == null || !id.matches("\\d{10,25}")) continue;
                 if (!first) b.append(",");
                 first = false;
-                b.append("\"").append(name).append("\":\"").append(id).append("\"");
+                b.append("\"").append(icon[0]).append("\":\"").append(id).append("\"");
             }
             b.append("}");
             plugin.getDataFolder().mkdirs();

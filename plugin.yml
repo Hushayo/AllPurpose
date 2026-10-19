@@ -4,7 +4,7 @@ main: com.hush.allpurpose.AllPurpose
 api-version: '1.20'
 author: Hush
 description: Ranks-only plugin (rank ladder, tags, LP sync)
-softdepend: [LoginSecurity, TAB, PlaceholderAPI, LuckPerms, SkinsRestorer, Vault, EconomyShopGUI]
+softdepend: [LoginSecurity, TAB, PlaceholderAPI, LuckPerms, SkinsRestorer, Vault]
 commands:
   rank:
     description: "Manage ranks. Players use /rank to see the level-up ladder."
@@ -37,10 +37,6 @@ commands:
     description: "Server changelog shown as dialogs (pause menu + /changelog show)."
     usage: "/changelog create <version> [text] | add <version> <text> | lines|setline|insertline|delline <version> ... | title|label <version> <text> | remove <version> | list | show [version] [player] | screen <on|off> | sync | reload"
     aliases: [changelogs]
-  cropsmarket:
-    description: "Crops market: crop shop sell prices that follow real supply."
-    usage: "/cropsmarket [info|review|reset]"
-    aliases: [cropmarket]
 permissions:
   rank.admin:
     description: Manage ranks
@@ -72,6 +68,3 @@ permissions:
   allpurpose.commandguard.bypass:
     description: "Exempt from the blocked-command guard (/effect /summon /tick rate /enchant)"
     default: false
-  allpurpose.cropsmarket.admin:
-    description: "Crops market admin (/cropsmarket info|review|reset)"
-    default: op
