@@ -74,13 +74,58 @@ killfx: {}
 # Hit this ping (ms) and you earn allpurpose:time_traveler with toast + chat.
 # 1000 = a full second of lag. Raise to make it rarer.
 ping-advancement-ms: 1000
-# --- Leaderboard hologram (/lb holo places it, /lb removeholo clears it) ---
-# BALTOP section reads Essentials userdata (same money /baltop ranks, honors
-# baltop-exempt). KILLTOP reads our lb.yml. /allpurpose reload applies.
+# --- Leaderboard holograms (one board per type) ---
+# Place:  /lb holo <killtop|baltop|playtimetop|deathtop>   (/lb holo = all four)
+# Remove: /lb removeholo <board>                           (/lb removeholo = all)
+# Each board is billboard FIXED (it does NOT swing with the player's camera)
+# and is oriented at placement so its readable face points at the placer.
+# BALTOP reads Essentials userdata (same money /baltop ranks, honors
+# baltop-exempt). Everything else reads our lb.yml. /allpurpose reload applies.
 lb-holo-baltop-enabled: true
 lb-holo-baltop-lines: 10
 lb-holo-kill-lines: 10
+lb-holo-deathtop-lines: 10
+lb-holo-playtimetop-lines: 10
 lb-holo-baltop-cache-seconds: 60
+lb-holo-playtimetop-cache-seconds: 300
+# --- Free-form text holograms: /setholotext (alias /holotext, /ht) ---
+# Place:  /setholotext new <id> <text...>    (/setholotext add <text...> = auto id)
+# The text is entirely yours - nothing is hardcoded. &-codes, #RRGGBB and
+# <gradient:#AAA:#BBB>text</gradient> work, and a literal \n (or more
+# /setholotext addline) makes extra lines.
+# Every hologram is billboard FIXED, so it never sways with a player's camera,
+# and its yaw is baked at placement so it faces the way you were looking
+# (/setholotext rotate <id> <deg|here|left|right|flip|north|south|east|west>).
+# Edit in place:  /setholotext text|addline|insertline|setline|delline|lines <id> ...
+# Tune the look:  /setholotext style <id> <key> <value>
+#   keys: billboard, align, background (#AARRGGBB|#RRGGBB|none|default),
+#         linewidth, opacity, seethrough, shadow, glow, viewrange, scale
+# Move / turn / inspect / delete:  move|rotate|tilt <id> | info|tp <id> | list | remove <id|all>
+# Defaults below apply to any hologram that has not overridden that style key.
+holotext:
+  enabled: true
+  default-billboard: fixed
+  default-background: "#80000000"
+  default-line-width: 300
+  default-text-opacity: -1
+  default-shadow: false
+  default-see-through: false
+  default-view-range: 0.6
+# --- Server changelog dialogs (/changelog) ---
+# Versions are boxes in a list; clicking one shows its lines one per line.
+#   /changelog create v1 | add v1 <text...> | show [version] [player]
+#   /changelog lines|setline|insertline|delline v1 ... | list | screen <on|off>
+# The pause-menu copy is a generated datapack rewritten every boot, so edits to
+# that copy appear after the NEXT restart. /changelog show is always instant.
+# 'screen' here is only the initial default; /changelog screen stores its own.
+changelog:
+  enabled: true
+  screen: true
+  root-title: "&6&lMCPVPGG &7- &fChangelog"
+  root-body: "&7Click a version to read its changes."
+  button-width: 220
+  # debug: log the datapack folder + a line on every rewrite (file+console).
+  debug: false
 # --- RCON console spam filter (keeps RCON enabled) ---
 # Hides vanilla "Thread RCON Client /x.x.x.x started / shutting down" INFO
 # lines plus the Essentials "Rcon issued server command: /list" polling echo.

@@ -26,30 +26,47 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
                 sender.sendMessage("§cNo permission (rank.admin).");
                 return true;
             }
-            if (TextUtil.norm(args[0]).equals("holo")) {
-                if (!(sender instanceof Player)) {
-                    sender.sendMessage("§cRun /" + label + " holo in-game, standing where the board should float.");
-                    return true;
-                }
-                Location at = ((Player) sender).getLocation();
-                // Text renders centered on the entity: lift by ~half the board
-                // height so the bottom edge sits at the placer's feet.
-                try {
-                    String txt = plugin.getLeaderboard().buildHoloString();
-                    int lines = Math.max(1, txt.split("\n", -1).length);
-                    at = at.clone().add(0.0, lines * 0.15, 0.0);
-                } catch (Exception ignored) {}
-                plugin.getLeaderboard().lbConfig().set("holo.world", at.getWorld().getName());
-                plugin.getLeaderboard().lbConfig().set("holo.x", at.getX());
-                plugin.getLeaderboard().lbConfig().set("holo.y", at.getY());
-                plugin.getLeaderboard().lbConfig().set("holo.z", at.getZ());
-                plugin.getLeaderboard().saveLb();
-                plugin.getLeaderboard().respawnHolo();
-                sender.sendMessage("§aLeaderboard hologram placed here.");
+            String sub = TextUtil.norm(args[0]);
+            String arg = args.length >= 2 ? TextUtil.norm(args[1]) : "";
+            boolean all = arg.isEmpty() || arg.equals("all");
+            String type = LeaderboardManager.holoType(arg);
+            if (!all && type == null) {
+                sender.sendMessage("§cUnknown board '§f" + args[1] + "§c'. Boards: §f"
+                        + String.join("§7, §f", LeaderboardManager.HOLO_TYPES) + "§c, §fall§c.");
                 return true;
             }
-            plugin.getLeaderboard().removeHolo();
-            sender.sendMessage("§aLeaderboard hologram removed.");
+            if (sub.equals("holo")) {
+                if (!(sender instanceof Player)) {
+                    sender.sendMessage("§cRun /" + label + " holo <board> in-game, standing where the board should float.");
+                    return true;
+                }
+                Player p = (Player) sender;
+                Location eye = p.getLocation();
+                // Orientation is baked at placement (billboard FIXED), so the
+                // board faces exactly the way the placer was looking.
+                float yaw = eye.getYaw();
+                java.util.List<String> placing = all
+                        ? Arrays.asList(LeaderboardManager.HOLO_TYPES)
+                        : Arrays.asList(type);
+                double cursor = eye.getY();
+                for (String t : placing) {
+                    // Lift by half the board height so its bottom edge sits at
+                    // the placer's feet; each board then stacks above the last.
+                    int lines = plugin.getLeaderboard().holoLineCount(t);
+                    double lift = Math.max(1, lines) * 0.15;
+                    Location at = new Location(eye.getWorld(), eye.getX(), cursor + lift, eye.getZ(), yaw, 0f);
+                    plugin.getLeaderboard().setHoloLoc(t, at);
+                    plugin.getLeaderboard().saveLb();
+                    plugin.getLeaderboard().respawnHolo(t);
+                    cursor += lift * 2.0 + 0.5;
+                }
+                if (all) sender.sendMessage("§aPlaced §f" + placing.size() + " §aleaderboard holograms here, stacked (§ffixed position, facing you§a).");
+                else sender.sendMessage("§aPlaced the §f" + type + " §ahologram here (§ffixed position, facing you§a).");
+                return true;
+            }
+            plugin.getLeaderboard().removeHolo(all ? null : type);
+            sender.sendMessage(all ? "§aAll leaderboard holograms removed."
+                    : "§aRemoved the §f" + type + " §ahologram.");
             return true;
         }
         int page = 1;
@@ -57,7 +74,7 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
             try {
                 page = Integer.parseInt(args[0]);
             } catch (NumberFormatException ex) {
-                sender.sendMessage("§cUsage: /" + label + " [page] §7| /" + label + " holo | /" + label + " removeholo");
+                sender.sendMessage("§cUsage: /" + label + " [page] §7| /" + label + " holo [killtop|baltop|playtimetop|deathtop|all] | /" + label + " removeholo [board|all]");
                 return true;
             }
         }
@@ -93,9 +110,15 @@ public class LeaderboardCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command cmd, String alias, String[] args) {
         List<String> lbOut = new ArrayList<>();
-        if (args.length == 1 && sender.hasPermission("rank.admin")) {
+        if (!sender.hasPermission("rank.admin")) return lbOut;
+        String sub = args.length >= 1 ? TextUtil.norm(args[0]) : "";
+        if (args.length == 1) {
             for (String s : Arrays.asList("holo", "removeholo"))
                 if (s.startsWith(TextUtil.norm(args[0]))) lbOut.add(s);
+        } else if (args.length == 2
+                && (sub.equals("holo") || sub.equals("removeholo") || sub.equals("delholo"))) {
+            for (String s : Arrays.asList("killtop", "baltop", "playtimetop", "deathtop", "all"))
+                if (s.startsWith(TextUtil.norm(args[1]))) lbOut.add(s);
         }
         return lbOut;
     }

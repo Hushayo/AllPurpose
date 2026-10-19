@@ -28,7 +28,12 @@ public class LeaderboardManager {
     private final AllPurpose plugin;
     private File lbFile;
     private YamlConfiguration lb;
-    private UUID holoId = null;
+
+    // One hologram per board type. Each board keeps its own spot in lb.yml
+    // (holo.<type>.world/x/y/z/yaw) and its own TextDisplay id, so /lb holo
+    // <type> and /lb removeholo <type> act on exactly one board.
+    public static final String[] HOLO_TYPES = {"killtop", "baltop", "playtimetop", "deathtop"};
+    private final Map<String, UUID> holoIds = new HashMap<>();
     private boolean holoBusy = false;
 
     // Rapid PvP kills by the same killer collapse into one summary line so a
@@ -54,6 +59,31 @@ public class LeaderboardManager {
         } else {
             lb = YamlConfiguration.loadConfiguration(lbFile);
         }
+        migrateLegacyHolo();
+    }
+
+    /**
+     * v2.1 shipped ONE combined board at holo.world/x/y/z. Turn that spot into
+     * the killtop board so the old floating text is reclaimed (respawn sweeps
+     * the area) instead of being orphaned by the new per-type keys.
+     */
+    private void migrateLegacyHolo() {
+        try {
+            if (!lb.contains("holo.world")) return;
+            if (!lb.contains("holo.killtop.world")) {
+                lb.set("holo.killtop.world", lb.getString("holo.world"));
+                lb.set("holo.killtop.x", lb.getDouble("holo.x"));
+                lb.set("holo.killtop.y", lb.getDouble("holo.y"));
+                lb.set("holo.killtop.z", lb.getDouble("holo.z"));
+                lb.set("holo.killtop.yaw", 0.0);
+            }
+            lb.set("holo.world", null);
+            lb.set("holo.x", null);
+            lb.set("holo.y", null);
+            lb.set("holo.z", null);
+            saveLb();
+            plugin.getLogger().info("Leaderboard: migrated the old single hologram to holo.killtop.");
+        } catch (Exception ignored) {}
     }
 
     public void saveLb() {
@@ -265,89 +295,176 @@ public class LeaderboardManager {
         return lb;
     }
 
-    public Location holoLoc() {
+    // ---------- Holograms: one board per type ----------
+    // A board is a TextDisplay parked at its own saved spot with billboard
+    // FIXED, so it no longer swings to face the camera; the yaw saved at
+    // placement makes its readable face point back at whoever placed it.
+
+    /** Normalizes a board name to a known type, or null. Accepts a few aliases. */
+    public static String holoType(String raw) {
         try {
-            if (!lb.contains("holo.world")) return null;
-            World w = Bukkit.getWorld(lb.getString("holo.world"));
+            String n = TextUtil.norm(raw);
+            if (n == null || n.isEmpty()) return null;
+            for (String t : HOLO_TYPES) if (t.equals(n)) return t;
+            if (n.equals("kill") || n.equals("kills") || n.equals("killstop") || n.equals("pvp")) return "killtop";
+            if (n.equals("bal") || n.equals("balance") || n.equals("money") || n.equals("baltops")) return "baltop";
+            if (n.equals("death") || n.equals("deaths") || n.equals("deathstop")) return "deathtop";
+            if (n.equals("playtime") || n.equals("pt") || n.equals("time") || n.equals("playtimetops")) return "playtimetop";
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    public Location holoLoc(String type) {
+        try {
+            String t = holoType(type);
+            if (t == null) return null;
+            String base = "holo." + t + ".";
+            if (!lb.contains(base + "world")) return null;
+            World w = Bukkit.getWorld(lb.getString(base + "world"));
             if (w == null) return null;
-            return new Location(w, lb.getDouble("holo.x"), lb.getDouble("holo.y"), lb.getDouble("holo.z"));
+            Location loc = new Location(w, lb.getDouble(base + "x"),
+                    lb.getDouble(base + "y"), lb.getDouble(base + "z"));
+            loc.setYaw((float) lb.getDouble(base + "yaw", 0.0));
+            loc.setPitch(0f);
+            return loc;
         } catch (Exception e) {
             return null;
         }
     }
 
-    public TextDisplay getHoloEntity() {
+    public void setHoloLoc(String type, Location loc) {
         try {
-            if (holoId == null) return null;
-            Entity en = Bukkit.getEntity(holoId);
+            String t = holoType(type);
+            if (t == null || loc == null || loc.getWorld() == null) return;
+            String base = "holo." + t + ".";
+            lb.set(base + "world", loc.getWorld().getName());
+            lb.set(base + "x", loc.getX());
+            lb.set(base + "y", loc.getY());
+            lb.set(base + "z", loc.getZ());
+            lb.set(base + "yaw", (double) loc.getYaw());
+        } catch (Exception ignored) {}
+    }
+
+    /** Types that currently have a saved spot in lb.yml. */
+    public java.util.List<String> holoPlacedTypes() {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        try {
+            for (String t : HOLO_TYPES) if (holoLoc(t) != null) out.add(t);
+        } catch (Exception ignored) {}
+        return out;
+    }
+
+    public TextDisplay getHoloEntity(String type) {
+        try {
+            String t = holoType(type);
+            if (t == null) return null;
+            UUID id = holoIds.get(t);
+            if (id == null) return null;
+            Entity en = Bukkit.getEntity(id);
             return en instanceof TextDisplay ? (TextDisplay) en : null;
         } catch (Exception e) {
             return null;
         }
     }
 
-    public void removeHoloEntity() {
+    public void removeHoloEntity(String type) {
         try {
-            TextDisplay td = getHoloEntity();
+            String t = holoType(type);
+            if (t == null) return;
+            TextDisplay td = getHoloEntity(t);
             if (td != null) td.remove();
         } catch (Exception ignored) {}
-        holoId = null;
+        try { holoIds.remove(holoType(type)); } catch (Exception ignored) {}
     }
 
-    // Orphan sweep: kills TextDisplays loitering around a board spot (crashed
-    // sessions, chunk-unload removals and restarts all leave ghosts that the
-    // id-tracked removal can't see). respawnHolo already sweeps before placing.
+    // Orphan sweep: kills UNTRACKED TextDisplays loitering around a board spot
+    // (crashed sessions, chunk-unload removals and restarts all leave ghosts
+    // that the id-tracked removal can't see). Tracked boards are skipped so a
+    // stacked placement (boards within 2 blocks of each other) never has one
+    // board eaten by a neighbour's respawn.
     public void sweepHoloArea(Location loc) {
         try {
             if (loc == null || loc.getWorld() == null) return;
             for (Entity en : loc.getWorld().getNearbyEntities(loc, 2, 3, 2)) {
-                if (en instanceof TextDisplay) {
-                    try { en.remove(); } catch (Exception ignored) {}
-                }
+                if (!(en instanceof TextDisplay)) continue;
+                if (holoIds.containsValue(en.getUniqueId())) continue;
+                try { en.remove(); } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {}
     }
 
-    // Full removal for /lb removeholo: capture the spot FIRST (the config null
-    // below would erase it), kill tracked + orphan boards, then clear + save.
+    // Removal for /lb removeholo [type|all]. The saved spot is captured FIRST
+    // (clearing the config would erase it), then tracked + orphan boards are
+    // killed, then the entry is cleared + saved.
+    public void removeHolo(String type) {
+        try {
+            if (type == null || type.isEmpty() || TextUtil.norm(type).equals("all")) {
+                removeHoloAll();
+                return;
+            }
+            String t = holoType(type);
+            if (t == null) return;
+            Location loc = holoLoc(t);
+            try { removeHoloEntity(t); } catch (Exception ignored) {}
+            sweepHoloArea(loc);
+            try { lbConfig().set("holo." + t, null); } catch (Exception ignored) {}
+            try { saveLb(); } catch (Exception ignored) {}
+        } catch (Exception ignored) {}
+    }
+
+    /** No-arg form = remove every board. */
     public void removeHolo() {
-        Location loc = null;
-        try { loc = holoLoc(); } catch (Exception ignored) {}
-        try { removeHoloEntity(); } catch (Exception ignored) {}
-        holoId = null;
-        sweepHoloArea(loc);
+        removeHoloAll();
+    }
+
+    private void removeHoloAll() {
+        for (String t : HOLO_TYPES) {
+            try {
+                Location loc = holoLoc(t);
+                removeHoloEntity(t);
+                sweepHoloArea(loc);
+            } catch (Exception ignored) {}
+        }
         try { lbConfig().set("holo", null); } catch (Exception ignored) {}
         try { saveLb(); } catch (Exception ignored) {}
     }
 
-    public String buildHoloString() {
-        int balN;
-        int killN;
-        boolean showBal;
-        try { showBal = plugin.getConfig().getBoolean("lb-holo-baltop-enabled", true); }
-        catch (Exception e) { showBal = true; }
-        try { balN = Math.max(0, Math.min(25, plugin.getConfig().getInt("lb-holo-baltop-lines", 10))); }
-        catch (Exception e) { balN = 10; }
-        try { killN = Math.max(0, Math.min(25, plugin.getConfig().getInt("lb-holo-kill-lines", 10))); }
-        catch (Exception e) { killN = 10; }
-        StringBuilder sb = new StringBuilder("&6&l⚔ LEADERBOARD");
-        if (showBal && balN > 0) {
-            sb.append("\n&e&l$ BALTOP");
-            java.util.List<BalRow> bals = balTop();
-            if (bals.isEmpty()) {
-                sb.append("\n&7&o... loading");
-            } else {
-                int n = Math.min(balN, bals.size());
-                for (int i = 0; i < n; i++) {
-                    BalRow r = bals.get(i);
-                    sb.append("\n&6&l#").append(i + 1).append(" &f").append(r.name)
-                            .append(" &a$").append(moneyOf(r.money));
-                }
-            }
+    private int holoLinesCfg(String key, int def) {
+        try { return Math.max(0, Math.min(25, plugin.getConfig().getInt(key, def))); }
+        catch (Exception e) { return def; }
+    }
+
+    // ---------- Per-board text ----------
+
+    /** Rendered board text for a type ("killtop", "baltop", ...). "" if unknown. */
+    public String buildHoloString(String type) {
+        String t = holoType(type);
+        if (t == null) return "";
+        if (t.equals("baltop")) return buildBalBoard();
+        if (t.equals("killtop")) return buildKillBoard();
+        if (t.equals("deathtop")) return buildDeathBoard();
+        if (t.equals("playtimetop")) return buildPlaytimeBoard();
+        return "";
+    }
+
+    /** Line count of a board (used to lift it off the placer's feet). */
+    public int holoLineCount(String type) {
+        try { return Math.max(1, buildHoloString(type).split("\n", -1).length); }
+        catch (Exception e) { return 1; }
+    }
+
+    public Component buildHoloText(String type) {
+        try {
+            return TextUtil.prefixComponent(buildHoloString(type));
+        } catch (Exception e) {
+            return Component.text(buildHoloString(type));
         }
-        sb.append("\n&c&l⚔ KILLTOP");
+    }
+
+    private String buildKillBoard() {
+        StringBuilder sb = new StringBuilder("&c&l⚔ KILLTOP");
         List<LbRow> rows = lbTop();
-        int n = Math.min(killN, rows.size());
+        int n = Math.min(holoLinesCfg("lb-holo-kill-lines", 10), rows.size());
         if (n == 0) {
             sb.append("\n&7&oNo kills yet");
         } else {
@@ -358,77 +475,180 @@ public class LeaderboardManager {
                         .append(" &cD:").append(r.deaths);
             }
         }
+        return sb.toString();
+    }
+
+    private String buildDeathBoard() {
+        StringBuilder sb = new StringBuilder("&4&l☠ DEAThtop");
+        List<LbRow> rows = lbTop();
+        java.util.Collections.sort(rows, new java.util.Comparator<LbRow>() {
+            @Override public int compare(LbRow a, LbRow b) {
+                if (b.deaths != a.deaths) return b.deaths - a.deaths;
+                return a.kills - b.kills;
+            }
+        });
+        int n = Math.min(holoLinesCfg("lb-holo-deathtop-lines", 10), rows.size());
+        if (n == 0) {
+            sb.append("\n&7&oNo deaths yet");
+        } else {
+            for (int i = 0; i < n; i++) {
+                LbRow r = rows.get(i);
+                sb.append("\n&6&l#").append(i + 1).append(" &f").append(r.name)
+                        .append(" &cD:").append(r.deaths)
+                        .append(" &aK:").append(r.kills);
+            }
+        }
+        return sb.toString();
+    }
+
+    private String buildBalBoard() {
+        boolean showBal;
+        try { showBal = plugin.getConfig().getBoolean("lb-holo-baltop-enabled", true); }
+        catch (Exception e) { showBal = true; }
+        StringBuilder sb = new StringBuilder("&e&l$ BALTOP");
+        if (!showBal) {
+            sb.append("\n&7&oBaltop board disabled in config");
+            return sb.toString();
+        }
+        java.util.List<BalRow> bals = balTop();
+        if (bals.isEmpty()) {
+            sb.append("\n&7&o... loading");
+            return sb.toString();
+        }
+        int n = Math.min(holoLinesCfg("lb-holo-baltop-lines", 10), bals.size());
+        for (int i = 0; i < n; i++) {
+            BalRow r = bals.get(i);
+            sb.append("\n&6&l#").append(i + 1).append(" &f").append(r.name)
+                    .append(" &a$").append(moneyOf(r.money));
+        }
+        return sb.toString();
+    }
+
+    // Playtime comes from player stats (a disk hit per player) and the board
+    // re-sorts every ranked player each refresh, so the numbers are cached -
+    // hitting disk for a few hundred players every minute is not worth it.
+    private final Map<String, Long> ptCache = new HashMap<>();
+    private long ptCacheAt = 0L;
+
+    private long ptCacheMillis() {
+        try { return Math.max(15000L, plugin.getConfig().getLong("lb-holo-playtimetop-cache-seconds", 300) * 1000L); }
+        catch (Exception e) { return 300000L; }
+    }
+
+    public long playtimeCached(String uuid) {
         try {
-            return sb.toString();
+            long now = System.currentTimeMillis();
+            if (now - ptCacheAt > ptCacheMillis()) {
+                ptCache.clear();
+                ptCacheAt = now;
+            }
+            Long v = ptCache.get(uuid);
+            if (v == null) { v = playtimeMinutes(uuid); ptCache.put(uuid, v); }
+            return v;
         } catch (Exception e) {
-            return sb.toString();
+            return 0L;
         }
     }
 
-    public Component buildHoloText() {
-        try {
-            return TextUtil.prefixComponent(buildHoloString());
-        } catch (Exception e) {
-            return Component.text(buildHoloString());
+    private String buildPlaytimeBoard() {
+        StringBuilder sb = new StringBuilder("&b&l⌛ PLAYTIMETOP");
+        List<LbRow> rows = lbTop();
+        final Map<String, Long> mins = new HashMap<>();
+        for (LbRow r : rows) mins.put(r.uuid, playtimeCached(r.uuid));
+        java.util.Collections.sort(rows, new java.util.Comparator<LbRow>() {
+            @Override public int compare(LbRow a, LbRow b) {
+                long ma = mins.containsKey(a.uuid) ? mins.get(a.uuid) : 0L;
+                long mb = mins.containsKey(b.uuid) ? mins.get(b.uuid) : 0L;
+                if (mb != ma) return Long.compare(mb, ma);
+                return a.name.compareToIgnoreCase(b.name);
+            }
+        });
+        int n = Math.min(holoLinesCfg("lb-holo-playtimetop-lines", 10), rows.size());
+        if (n == 0) {
+            sb.append("\n&7&oNo playtime yet");
+        } else {
+            for (int i = 0; i < n; i++) {
+                LbRow r = rows.get(i);
+                long m = mins.containsKey(r.uuid) ? mins.get(r.uuid) : 0L;
+                sb.append("\n&6&l#").append(i + 1).append(" &f").append(r.name)
+                        .append(" &b").append(formatPlaytime(m));
+            }
         }
+        return sb.toString();
     }
 
-    public void respawnHolo() {
-        // Never recurse: this sets the text itself and never calls updateHolo().
+    // ---------- Spawn / refresh ----------
+
+    /** Spawn (or re-spawn) one board. Never calls updateHolo (no recursion). */
+    public void respawnHolo(String type) {
+        String t = holoType(type);
+        if (t == null) return;
         if (holoBusy) return;
         holoBusy = true;
         try {
-            removeHoloEntity();
-            Location loc = holoLoc();
+            removeHoloEntity(t);
+            Location loc = holoLoc(t);
             if (loc == null || loc.getWorld() == null) return;
             // Nobody around (e.g. right after a restart): don't spawn into an
             // unloaded chunk, the periodic updater will try again later.
             try {
                 if (!loc.getWorld().isChunkLoaded(loc.getBlockX() >> 4, loc.getBlockZ() >> 4)) return;
             } catch (Exception ignored) {}
-            // Clear stale boards left by older versions/crashes so they can't pile up.
-            try {
-                for (Entity en : loc.getWorld().getNearbyEntities(loc, 2, 3, 2)) {
-                    if (en instanceof TextDisplay) {
-                        try { en.remove(); } catch (Exception ignored) {}
-                    }
-                }
-            } catch (Exception ignored) {}
+            // Clear untracked boards left by older versions/crashes so they
+            // can't pile up (tracked neighbour boards are preserved).
+            sweepHoloArea(loc);
             TextDisplay td = (TextDisplay) loc.getWorld().spawnEntity(loc, EntityType.TEXT_DISPLAY);
-            td.setBillboard(Display.Billboard.CENTER);
+            // FIXED (not CENTER): the board holds the rotation it was placed
+            // with instead of swinging to follow every viewer's camera.
+            td.setBillboard(Display.Billboard.FIXED);
             td.setAlignment(TextDisplay.TextAlignment.CENTER);
             td.setBackgroundColor(Color.fromARGB(128, 0, 0, 0));
             td.setLineWidth(300);
             td.setSeeThrough(false);
             td.setPersistent(true);
             td.setInvulnerable(true);
-            holoId = td.getUniqueId();
+            holoIds.put(t, td.getUniqueId());
             try {
-                td.text(buildHoloText());
+                td.text(buildHoloText(t));
             } catch (Exception ignored) {}
         } catch (Exception e) {
-            plugin.getLogger().warning("Leaderboard hologram failed: " + e.getMessage());
-            holoId = null;
+            plugin.getLogger().warning("Leaderboard hologram (" + t + ") failed: " + e.getMessage());
+            try { holoIds.remove(t); } catch (Exception ignored) {}
         } finally {
             holoBusy = false;
         }
     }
 
-    public void updateHolo() {
+    /** Re-spawn every board that has a saved spot. */
+    public void respawnHolo() {
+        for (String t : HOLO_TYPES) {
+            try { if (holoLoc(t) != null) respawnHolo(t); } catch (Exception ignored) {}
+        }
+    }
+
+    public void updateHolo(String type) {
         try {
-            if (holoLoc() == null) return;
-            TextDisplay td = getHoloEntity();
+            String t = holoType(type);
+            if (t == null) return;
+            if (holoLoc(t) == null) return;
+            TextDisplay td = getHoloEntity(t);
             if (td == null || !td.isValid()) {
-                respawnHolo(); // single attempt, no recursion: respawn never calls back here
+                respawnHolo(t); // single attempt, no recursion: respawn never calls back here
                 return;
             }
-            // never teleport here: position is fixed at placement so the
-            // board stays put and only its text refreshes (no flicker/jitter).
-            // Re-assert CENTER billboard so boards spawned by older builds
-            // face every viewer without needing /lb holo re-placed.
-            try { td.setBillboard(Display.Billboard.CENTER); } catch (Exception ignored) {}
-            td.text(buildHoloText());
+            // Never teleport here: position + rotation are fixed at placement so
+            // the board stays put and only its text refreshes (no flicker). The
+            // FIXED billboard is re-asserted for boards spawned by older builds.
+            try { td.setBillboard(Display.Billboard.FIXED); } catch (Exception ignored) {}
+            td.text(buildHoloText(t));
         } catch (Exception ignored) {}
+    }
+
+    /** Refresh every placed board (kill/death hooks + the 60s upkeep task). */
+    public void updateHolo() {
+        for (String t : HOLO_TYPES) {
+            try { updateHolo(t); } catch (Exception ignored) {}
+        }
     }
 
     /** MONITOR PvP death hook: stats + rankup + board refresh.
