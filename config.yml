@@ -98,6 +98,28 @@ transfer-port: 10066
 # with the safe form + repair line, and it is logged. True = on.
 lp-parent-guard-enabled: true
 
+# --- Command guard: the commands LuckPerms alone cannot stop ---
+# Paper gates vanilla commands with `minecraft.command.*` by OP LEVEL, so an
+# opped player ignores a `false` node (verified live: an op ran /tick while
+# minecraft.command.tick was false; a non-op was refused). Plugin commands
+# (/eco, /gmc, /bounty, ...) ARE LP-gated even for ops.
+# This cancels the listed commands for anyone WITHOUT the bypass permission -
+# ops included. Entries ship as code defaults too, so the guard works even
+# before this section is added to a live config.yml.
+#   "cmd"       -> blocks every use
+#   "cmd sub"   -> blocks only that subcommand ("tick rate" keeps /tick query)
+# Exempt someone: /lp user <name> permission set allpurpose.commandguard.bypass true
+# (RevengeByRain is exempt already: they hold `*`.)
+command-guard:
+  enabled: true
+  bypass-permission: allpurpose.commandguard.bypass
+  message: "&cThat command is disabled."
+  commands:
+    - effect
+    - summon
+    - "tick rate"
+    - enchant
+
 # --- LuckPerms group mirror: hushrank -> LP parent (kit permissions etc.) ---
 # When a player GAINS a synced rank:  lp user <uuid> parent add <rank>
 # When they LOSE it (removed, demoted, rank deleted): parent remove <rank>
