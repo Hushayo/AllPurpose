@@ -205,17 +205,27 @@ discord-ad:
   enabled: true
   interval-minutes: 10
   min-players: 5
-  invite-url: "https://discord.gg/mzF50k594f"
+  invite-url: "https://discord.gg/mzF5Qk594f"
   line: "&7Join our &bDiscord &7server: "
 
 # --- Discord public chat log (BOT, same token as status board) ---
 # Logs player chat + /say + /broadcast + join/quit/death public messages to
 # channel-id via the STATUS BOT (not a webhook), so custom guild emoji render.
-# Player lines use embed author icons (mc-heads) = heads server-side, instant.
+# READABLE layout (owner request 2026-10-19): plain text lines, NOT embeds. A
+# player line starts with the speaker's own HEAD emoji, then the rank tag and
+# the **bold** player name, then the message:
+#   <:head_ab12cd34ef56:1234> [ADMIN] **KingsterVV**: btw cmere
+# (the tag itself can't be coloured — Discord only colours embeds, not message
+# text). The head is a guild emoji from the status board's cache: the board
+# uploads one head per tick for everyone online, so a chatting player's head is
+# normally already cached, and the Steve/bust glyph shows until it is. That
+# needs discord-status enabled (same bot token/guild).
+# heads: false -> no head prefix.
 # Toggles apply on /allpurpose reload (needs restart once to install).
 discord-chatlog:
   enabled: true
   channel-id: "1560744974386077867"
+  heads: true
   chat: true
   broadcast: true
   joins: true
@@ -246,6 +256,7 @@ discord-status:
   channel-id: "1559211061553401986"
   update-seconds: 15
   emoji-upload: true
+  head-expiry-minutes: 10
   server-address: "mcpvpggg.mcsh.io"
   session: "Secret SMP session 3"
 

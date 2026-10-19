@@ -26,18 +26,34 @@ import io.papermc.paper.event.player.AsyncChatEvent;
  * Forwards player chat + server broadcasts (/say, /broadcast, broadcastMessage)
  * + join/quit/death public messages to discord-chatlog.channel-id via REST.
  *
- * Heads server-side: each player line posts as an embed with author icon_url
- * https://mc-heads.net/avatar/{name}/64.png — no custom-emoji upload needed,
- * works instantly for Java + Bedrock names. Custom guild emoji (hi_* from the
- * status board) render automatically since it's the same bot/guild.
+ * LAYOUT (owner request 2026-10-19): plain text lines, NOT embeds — each player
+ * line starts with the speaker's own head, then the rank tag, the **bold** name
+ * and the message:
+ *
+ *     <:head_ab12cd34ef56:1234> [ADMIN] **KingsterVV**: btw cmere
+ *
+ * The head is the status board's cached guild emoji (same bot/guild, so it
+ * renders): DiscordStatusBoard.headEmojiTag() returns the player's uploaded
+ * head, the Steve head, or a bust glyph while it is still being uploaded. The
+ * board uploads one head per tick for everyone online, so a chatting player's
+ * head is usually cached already and always appears within a tick or two.
+ * discord-chatlog.heads: false drops the prefix (old plain lines).
+ * Custom guild emoji (hi_* / head_* from the status board) render automatically
+ * since it is the same bot/guild.
  */
 public class DiscordChatLog implements Listener {
 
     private static final String API = "https://discord.com/api/v10";
 
+    /** Batching: Discord caps a message at 2000 chars; stay clear of it. */
+    private static final int MAX_LINES = 10;
+    private static final int MAX_CHARS = 1900;
+    private static final int MAX_MSG = 500;
+
     private final AllPurpose plugin;
     private final ConcurrentLinkedQueue<String> queue = new ConcurrentLinkedQueue<>();
     private boolean taskOn = false;
+    private boolean warned = false;
     private HttpClient http = null;
 
     public DiscordChatLog(AllPurpose plugin) {
@@ -85,12 +101,46 @@ public class DiscordChatLog implements Listener {
         }
     }
 
-    /** Queue a plain-text line for delivery. */
+    /** Prefix player lines with their head emoji. false = plain text only. */
+    private boolean wantHeads() {
+        try {
+            return plugin.getConfig().getBoolean("discord-chatlog.heads", true);
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
+    /** Public: queue a plain-text system line (coinflip / bounty / shop / tax / prize). */
+    public void system(String text) {
+        try { queueLine(text); } catch (Exception ignored) {}
+    }
+
+    /** System text: colour codes stripped (these lines come from plugins, never players). */
     private void queueLine(String line) {
         try {
             if (line == null) return;
-            String t = DiscordWebhook.clean(line).trim();
+            queue(DiscordWebhook.clean(line));
+        } catch (Exception ignored) {}
+    }
+
+    /**
+     * Player chat: NOT colour-stripped. DiscordWebhook.cleanTag's contract is
+     * that the prefix is cleaned and the message is left alone — players
+     * legitimately type "&#FF0000" or "&c" and it should show up as typed.
+     */
+    private void queuePlayerLine(String line) {
+        try {
+            if (line == null) return;
+            queue(line);
+        } catch (Exception ignored) {}
+    }
+
+    private void queue(String line) {
+        try {
+            if (line == null) return;
+            String t = line.trim();
             if (t.isEmpty()) return;
+            if (t.length() > MAX_CHARS) t = t.substring(0, MAX_CHARS - 1) + "…";
             if (!enabled()) return;
             if (queue.size() > 200) queue.poll();
             queue.add(t);
@@ -118,21 +168,29 @@ public class DiscordChatLog implements Listener {
             if (!enabled()) { queue.clear(); return; }
             List<String> take = new ArrayList<>();
             int len = 0;
-            while (!queue.isEmpty() && take.size() < 10) {
+            while (!queue.isEmpty() && take.size() < MAX_LINES) {
                 String peek = queue.peek();
                 if (peek == null) break;
-                if (len + peek.length() + 1 > 1900) break;
+                if (!take.isEmpty() && len + peek.length() + 1 > MAX_CHARS) break;
                 queue.poll();
                 take.add(peek);
                 len += peek.length() + 1;
             }
-            if (take.isEmpty()) { queue.clear(); return; }
-            post("{\"content\":" + json(String.join("\n", take))
+            if (take.isEmpty()) { queue.poll(); return; } // one over-long line: drop just it
+            int code = post("{\"content\":" + json(String.join("\n", take))
                     + ",\"allowed_mentions\":{\"parse\":[]}}");
+            if (code >= 400 && !warned) {
+                warned = true;
+                try {
+                    plugin.getLogger().warning("Discord chat log: post to channel " + channelId()
+                            + " returned HTTP " + code + " — check the bot can Send Messages there.");
+                } catch (Exception ignored) {}
+            }
         } catch (Exception ignored) {}
     }
 
-    private void post(String payload) {
+    /** Returns the HTTP status, or -1 when the request never got a response. */
+    private int post(String payload) {
         try {
             if (http == null) {
                 http = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(8)).build();
@@ -145,10 +203,14 @@ public class DiscordChatLog implements Listener {
                     .POST(HttpRequest.BodyPublishers.ofString(payload, StandardCharsets.UTF_8))
                     .build();
             HttpResponse<String> res = http.send(req, HttpResponse.BodyHandlers.ofString());
-            if (res != null && res.statusCode() == 429) {
+            if (res == null) return -1;
+            if (res.statusCode() == 429) {
                 try { Thread.sleep(4000); } catch (Exception ignored) {}
             }
-        } catch (Exception ignored) {}
+            return res.statusCode();
+        } catch (Exception e) {
+            return -1;
+        }
     }
 
     private static String json(String s) {
@@ -166,20 +228,53 @@ public class DiscordChatLog implements Listener {
         return b.append('"').toString();
     }
 
-    private void logChat(String playerName, String rankPrefixPlain, String message) {
+    /** Discord markdown inside **bold** breaks if the name carries a control char
+     * (Bedrock names can), so escape the few that matter. */
+    private static String mdSafe(String s) {
+        if (s == null) return "";
+        StringBuilder b = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c == '*' || c == '_' || c == '~' || c == '`' || c == '|' || c == '\\') b.append('\\');
+            b.append(c);
+        }
+        return b.toString();
+    }
+
+    /** The speaker's head as a guild emoji (same bot/guild as the status board),
+     * or "" when heads are off / the board has nothing cached. */
+    private String headPrefix(Player p) {
+        try {
+            if (!wantHeads()) return "";
+            DiscordStatusBoard board = plugin.getStatusBoard();
+            if (board == null) return "";
+            String tag = board.headEmojiTag(p.getName(), p.getUniqueId());
+            if (tag == null || tag.isEmpty()) return "";
+            return tag + " ";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    /**
+     * Player chat -> "<head> [RANK] **Name**: msg".
+     *
+     * rawPrefix is RankManager.fullTagRaw(), already bracketed per tag
+     * ("[FIRE+] [CO-OWNER] "), so it is used verbatim: wrapping it again produced
+     * the old double-bracket line ("[[MEMBER]] NotSlabby: ...").
+     */
+    private void logChat(Player p, String playerName, String rawPrefix, String message) {
         try {
             String msg = message == null ? "" : message.trim();
             if (msg.isEmpty()) return;
-            if (msg.length() > 500) msg = msg.substring(0, 500) + "…";
-            String title = rankPrefixPlain == null || rankPrefixPlain.isEmpty()
-                    ? playerName : "[" + rankPrefixPlain + "] " + playerName;
-            queueLine(title + ": " + msg);
-        } catch (Exception ignored) {}
-    }
-
-    private void logSystem(String text) {
-        try {
-            queueLine(text);
+            if (msg.length() > MAX_MSG) msg = msg.substring(0, MAX_MSG) + "…";
+            // cleanTag() strips the prefix's codes; the chat text itself is sent
+            // as typed (see queuePlayerLine).
+            String tag = DiscordWebhook.cleanTag(rawPrefix);
+            String head = headPrefix(p);
+            String name = mdSafe(playerName);
+            String body = tag.isEmpty() ? name : tag + " " + name;
+            queuePlayerLine(head + body + ": " + msg);
         } catch (Exception ignored) {}
     }
 
@@ -192,12 +287,12 @@ public class DiscordChatLog implements Listener {
             Player p = e.getPlayer();
             if (p == null) return;
             String msg = PlainTextComponentSerializer.plainText().serialize(e.message());
-            String tag = "";
+            String raw = "";
             try {
-                String raw = plugin.getRanks().fullTagRaw(p);
-                if (raw != null && !raw.isEmpty()) tag = DiscordWebhook.cleanTag(raw);
+                String tag = plugin.getRanks().fullTagRaw(p);
+                if (tag != null) raw = tag;
             } catch (Exception ignored) {}
-            logChat(DiscordWebhook.safeName(p.getName()), tag, msg);
+            logChat(p, DiscordWebhook.safeName(p.getName()), raw, msg);
         } catch (Exception ignored) {}
     }
 
@@ -207,7 +302,7 @@ public class DiscordChatLog implements Listener {
             if (!want("broadcast")) return;
             String msg = PlainTextComponentSerializer.plainText().serialize(e.message());
             if (msg == null || msg.trim().isEmpty()) return;
-            logSystem(msg.trim());
+            queueLine(msg.trim());
         } catch (Exception ignored) {}
     }
 
@@ -218,7 +313,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.joinMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            logSystem(m.trim());
+            queueLine(m.trim());
         } catch (Exception ignored) {}
     }
 
@@ -229,7 +324,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.quitMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            logSystem(m.trim());
+            queueLine(m.trim());
         } catch (Exception ignored) {}
     }
 
@@ -240,7 +335,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.deathMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            logSystem(m.trim());
+            queueLine(m.trim());
         } catch (Exception ignored) {}
     }
 }

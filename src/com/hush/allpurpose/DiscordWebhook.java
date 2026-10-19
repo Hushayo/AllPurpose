@@ -90,12 +90,24 @@ public class DiscordWebhook implements Listener {
         }
     }
 
-    /** clean() plus MiniMessage/gradient tag strip (for rank prefixes only —
-     * never apply to chat text, players type things like <3 legitimately). */
+    /** clean() plus hex + MiniMessage/gradient tag strip (for rank prefixes
+     * only — never apply to chat text, players type things like <3 or a
+     * literal &#FF0000 legitimately).
+     *
+     * clean() only knows one-char codes, so a hex prefix written as
+     * '&#FF0000&lFIRE+' used to leak its raw '&#FF0000' into the relayed line
+     * ("[&#FF0000FIRE+] [CO-OWNER]"). Strip the multi-char hex forms first:
+     * the one-char pass would otherwise eat the &R/&G/&B pairs inside
+     * &x&R&R&G&G&B&B and leave a stray 'x' behind. */
     public static String cleanTag(String s) {
         try {
-            String t = clean(s);
-            t = t.replaceAll("<[^<>]*>", "");
+            if (s == null) return "";
+            String t = s;
+            t = t.replaceAll("(?i)\u00A7x(\u00A7[0-9a-f]){6}", ""); // §x§R§R§G§G§B§B
+            t = t.replaceAll("(?i)&x(&[0-9a-f]){6}", "");           // &x&R&R&G&G&B&B
+            t = t.replaceAll("(?i)&#[0-9a-f]{6}", "");              // &#RRGGBB
+            t = clean(t);                                           // leftover §c / &c codes
+            t = t.replaceAll("<[^<>]*>", "");                       // <gradient:..>..</gradient>
             return t.trim();
         } catch (Exception e) {
             return "";

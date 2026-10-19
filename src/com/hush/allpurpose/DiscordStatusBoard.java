@@ -465,11 +465,16 @@ public class DiscordStatusBoard {
     // At most ONE head upload per tick to respect Discord's emoji-create rate
     // limits; the cap below guards the 50-slot guild limit on unboosted servers.
     private static final String HEAD_FALLBACK = "\uD83D\uDC64"; // bust in silhouette
-    private static final int MAX_HEAD_EMOJI = 40;
+    // Guild emoji slots are scarce (50 unboosted, shared with hi_* icons), so
+    // heads are LRU-capped: when full, the longest-unseen head is DELETED to
+    // make room instead of growing forever.
+    private static final int MAX_HEAD_EMOJI = 25;
     /** SkinsRestorer texture-hash -> guild emoji id (persisted). */
     private final ConcurrentHashMap<String, String> headEmojiIds = new ConcurrentHashMap<>();
     /** Player name -> SkinsRestorer texture-hash (memory; re-resolved each boot). */
     private final ConcurrentHashMap<String, String> nameToHash = new ConcurrentHashMap<>();
+    /** Texture-hash -> last tick it was seen online (for LRU eviction). */
+    private final ConcurrentHashMap<String, Long> headSeen = new ConcurrentHashMap<>();
     private volatile boolean headsLoaded = false;
 
     /** Tag for one bullet: custom head emoji when cached, Steve head when the
@@ -490,6 +495,30 @@ public class DiscordStatusBoard {
         return HEAD_FALLBACK;
     }
 
+    /**
+     * Public for the chat log: the head emoji tag for one player, reusing this
+     * board's upload cache (never triggers a second upload path). Returns the
+     * player's head, the Steve head, or the generic bust while the real head is
+     * still being uploaded — so callers always get something head-shaped.
+     * Null only when nothing at all is known.
+     *
+     * Called from the async chat thread, so it only READS: it loads the on-disk
+     * cache on first use and resolves the speaker's own skin hash (local
+     * SkinsRestorer lookup, no HTTP). Uploading stays here on the board's tick.
+     */
+    public String headEmojiTag(String name, java.util.UUID uuid) {
+        try {
+            if (!headsLoaded) { loadHeadCache(); loadHeadSeen(); headsLoaded = true; }
+            if (name != null && !nameToHash.containsKey(name)) {
+                String h = skinsRestorerTextureHash(uuid, name);
+                if (h != null && !h.isEmpty()) nameToHash.put(name, h);
+            }
+            return headTag(name, uuid);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static String headEmojiName(String hash) {
         try {
             String h = hash.replaceAll("[^a-zA-Z0-9]", "").toLowerCase(java.util.Locale.ROOT);
@@ -504,7 +533,7 @@ public class DiscordStatusBoard {
     /** Resolve hashes for everyone online; upload at most ONE missing head. */
     private void syncHeadEmojis(Snapshot s) {
         try {
-            if (headsLoaded == false) { loadHeadCache(); headsLoaded = true; }
+            if (headsLoaded == false) { loadHeadCache(); loadHeadSeen(); headsLoaded = true; }
             if (s.names.isEmpty()) return;
             // 1) Resolve texture hashes (SkinsRestorer local storage: fast, no HTTP).
             for (int i = 0; i < s.names.size(); i++) {
@@ -516,7 +545,49 @@ public class DiscordStatusBoard {
                     if (h != null && !h.isEmpty()) nameToHash.put(n, h);
                 } catch (Exception ignored) {}
             }
-            // 2) Ensure the Steve fallback head (players with no SR skin stored).
+            // Stamp recency for everyone online (drives LRU eviction below).
+            try {
+                long now = System.currentTimeMillis();
+                for (String n : s.names) {
+                    String h = nameToHash.get(n);
+                    if (h != null) headSeen.put(h, now);
+                }
+                saveHeadSeen();
+            } catch (Exception ignored) {}
+            // 2) Expire heads of players gone longer than head-expiry-minutes.
+            // One delete per tick (rate-limit friendly). Unknown recency
+            // (pre-existing entries) is stamped now, never bulk-deleted.
+            try {
+                long now = System.currentTimeMillis();
+                long ttl = headExpiryMinutes() * 60L * 1000L;
+                boolean touched = false;
+                for (String k : new java.util.ArrayList<>(headEmojiIds.keySet())) {
+                    if ("STEVE".equals(k)) continue;
+                    if (!headSeen.containsKey(k)) { headSeen.put(k, now); touched = true; }
+                }
+                String dead = null;
+                long deadAge = 0;
+                for (String k : headEmojiIds.keySet()) {
+                    if ("STEVE".equals(k)) continue;
+                    Long seen = headSeen.get(k);
+                    long age = seen == null ? 0L : now - seen;
+                    if (age >= ttl && (dead == null || age > deadAge)) { dead = k; deadAge = age; }
+                }
+                if (touched) saveHeadSeen();
+                if (dead != null) {
+                    String gid = resolveGuildId();
+                    if (gid == null) return;
+                    String eid = headEmojiIds.get(dead);
+                    try { if (eid != null) deleteEmoji(gid, eid); } catch (Exception ignored) {}
+                    headEmojiIds.remove(dead);
+                    headSeen.remove(dead);
+                    saveHeadCache();
+                    saveHeadSeen();
+                    try { plugin.getLogger().info("Discord status board: expired head emoji " + headEmojiName(dead) + " (unseen " + (deadAge / 60000) + "m)."); } catch (Exception ignored) {}
+                    return; // one Discord mutation per tick
+                }
+            } catch (Exception ignored) {}
+            // 3) Ensure the Steve fallback head (players with no SR skin stored).
             if (!headEmojiIds.containsKey("STEVE")) {
                 if (headEmojiIds.size() >= MAX_HEAD_EMOJI) return;
                 String gid = resolveGuildId();
@@ -539,8 +610,33 @@ public class DiscordStatusBoard {
                 } catch (Exception ignored) {}
                 return; // one upload attempt per tick, always
             }
-            // 3) Upload a single missing head (rate-limit friendly).
-            if (headEmojiIds.size() >= MAX_HEAD_EMOJI) return;
+            // 4) Upload a single missing head (rate-limit friendly).
+            // LRU backstop: at cap, delete the longest-unseen head to free its slot.
+            String guildForEvict = null;
+            try {
+                int heads = 0;
+                for (String k : headEmojiIds.keySet()) if (!"STEVE".equals(k)) heads++;
+                if (heads >= MAX_HEAD_EMOJI) {
+                    String oldest = null;
+                    long oldestSeen = Long.MAX_VALUE;
+                    for (String k : headEmojiIds.keySet()) {
+                        if ("STEVE".equals(k)) continue;
+                        Long seen = headSeen.get(k);
+                        long t = seen == null ? 0L : seen;
+                        if (t < oldestSeen) { oldestSeen = t; oldest = k; }
+                    }
+                    if (oldest == null) return;
+                    guildForEvict = resolveGuildId();
+                    if (guildForEvict == null) return;
+                    String eid = headEmojiIds.get(oldest);
+                    try { if (eid != null) deleteEmoji(guildForEvict, eid); } catch (Exception ignored) {}
+                    headEmojiIds.remove(oldest);
+                    headSeen.remove(oldest);
+                    saveHeadCache();
+                    saveHeadSeen();
+                    try { plugin.getLogger().info("Discord status board: evicted stale head emoji " + headEmojiName(oldest)); } catch (Exception ignored) {}
+                }
+            } catch (Exception ignored) { return; }
             String guildId = null;
             for (int i = 0; i < s.names.size(); i++) {
                 String n = s.names.get(i);
@@ -730,6 +826,51 @@ public class DiscordStatusBoard {
             b.append("}");
             plugin.getDataFolder().mkdirs();
             Files.write(headCacheFile().toPath(), b.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (Exception ignored) {}
+    }
+
+    /** Minutes after a player is last seen online before their head emoji is
+     * deleted to free its guild slot (STEVE fallback is never deleted). */
+    private long headExpiryMinutes() {
+        try {
+            long m = plugin.getConfig().getLong("discord-status.head-expiry-minutes", 10);
+            if (m < 2) m = 2;
+            if (m > 10080) m = 10080;
+            return m;
+        } catch (Exception e) {
+            return 10;
+        }
+    }
+
+    private File headSeenFile() {
+        return new File(plugin.getDataFolder(), "discord_status_headseen.json");
+    }
+
+    private void loadHeadSeen() {
+        try {
+            File f = headSeenFile();
+            if (!f.exists()) return;
+            String s = new String(Files.readAllBytes(f.toPath()), StandardCharsets.UTF_8);
+            Matcher m = Pattern.compile("\"([0-9a-fA-F]{4,64})\"\\s*:\\s*(\\d{1,20})").matcher(s);
+            while (m.find()) {
+                try { headSeen.put(m.group(1), Long.parseLong(m.group(2))); } catch (Exception ignored) {}
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void saveHeadSeen() {
+        try {
+            StringBuilder b = new StringBuilder("{");
+            boolean first = true;
+            for (java.util.Map.Entry<String, Long> e : headSeen.entrySet()) {
+                if (e.getKey() == null || e.getValue() == null) continue;
+                if (!first) b.append(",");
+                first = false;
+                b.append("\"").append(e.getKey()).append("\":").append(e.getValue());
+            }
+            b.append("}");
+            plugin.getDataFolder().mkdirs();
+            Files.write(headSeenFile().toPath(), b.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ignored) {}
     }
 
