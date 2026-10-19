@@ -336,6 +336,9 @@ bounty:
 # --- Chest shops (Vault/EssentialsX economy, physical chests) ---
 # Sneak + right-click a chest/barrel/shulker to set it up. Right-click someone
 # else's shop to trade (a confirm screen opens first). /shop browses them all.
+# A sneak-click that would place a block is left alone (vanilla), so you can
+# still build on top of a chest while holding blocks; with a block in hand,
+# manage your own shop from /shop (your shop -> click) instead.
 #   SELL shop: the owner stocks the chest; buyers pay `price` for `quantity`.
 #   BUY  shop: sellers hand over `quantity` items; the owner's balance pays.
 # tax-percent is the house cut off the OWNER's side of each trade (a SELL owner

@@ -3,7 +3,9 @@ package com.hush.allpurpose;
 import java.util.Iterator;
 import java.util.List;
 import org.bukkit.Bukkit;
+import org.bukkit.Material;
 import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
 import org.bukkit.inventory.BlockInventoryHolder;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -23,6 +25,7 @@ import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.inventory.ItemStack;
 
 /**
  * The gestures and the guards.
@@ -31,6 +34,10 @@ import org.bukkit.inventory.InventoryHolder;
  *   sneak + right-click -> set up / edit a shop there (opens the setup screen)
  *   plain right-click   -> trade at someone else's shop (opens the confirm GUI)
  *   plain right-click on your own -> the chest opens, exactly as vanilla
+ *
+ * A sneak-click that would place a block always stays vanilla. Sneaking is how
+ * you build on top of / against a container, so the shop screens must not take
+ * that click - otherwise a shop chest can never be built around.
  *
  * Guards: nobody but the owner (or staff) can open, break, blow up, push or
  * hopper-drain a shop's container.
@@ -54,6 +61,13 @@ public class ShopListener implements Listener {
             Block b = e.getClickedBlock();
             if (b == null) return;
             Player p = e.getPlayer();
+
+            // Sneak-clicking with a placeable block in hand is vanilla block
+            // placement - the only way to put a block on top of / against a
+            // container. Never swallow that click, or a chest in a tight spot
+            // (where the chest is the only surface to aim at) cannot be built on.
+            if (a == Action.RIGHT_CLICK_BLOCK && isBlockPlacement(p, e, b)) return;
+
             ShopManager m = plugin.getShop();
             ShopManager.Shop s = m.at(b);
             boolean otherPluginDenied = e.isCancelled();   // e.g. a WorldGuard region denial
@@ -120,6 +134,31 @@ public class ShopListener implements Listener {
 
     private static boolean mayManage(Player p, ShopManager.Shop s) {
         return s.isOwner(p.getUniqueId()) || p.hasPermission("allpurpose.shop.admin");
+    }
+
+    /**
+     * True when a sneak-click is really the player placing a block, not a shop
+     * gesture: sneaking, a block in hand, and somewhere legal to put it.
+     *
+     * Vanilla only needs the sneak on a container (otherwise it opens), and that
+     * is exactly the click the shop screens otherwise take over. The
+     * "somewhere legal" test keeps the shop reachable whenever the placement
+     * could not have happened anyway - e.g. the block above a chest is already
+     * taken in a cramped space, the click is ours again.
+     */
+    private static boolean isBlockPlacement(Player p, PlayerInteractEvent e, Block clicked) {
+        try {
+            if (!p.isSneaking()) return false;
+            ItemStack it = e.getItem();
+            if (it == null) return false;
+            Material type = it.getType();
+            if (type == null || type == Material.AIR || !type.isBlock()) return false;
+            BlockFace face = e.getBlockFace();
+            if (face == null) return false;
+            return clicked.getRelative(face).isReplaceable();
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     // ---------- protection ----------
