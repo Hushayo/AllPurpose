@@ -27,6 +27,8 @@ mcp/
 # private ops tooling + notes (live creds, local paths) — never public
 deploytools/
 TODO.md
+# agent/dev guide — local only, never publish (holds ops details)
+AGENTS.md
 minebot/
 mcp/rcon-config.json
 mcp/sftp-config.json
