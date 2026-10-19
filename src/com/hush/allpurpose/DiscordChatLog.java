@@ -26,11 +26,15 @@ import io.papermc.paper.event.player.AsyncChatEvent;
  * Forwards player chat + server broadcasts (/say, /broadcast, broadcastMessage)
  * + join/quit/death public messages to discord-chatlog.channel-id via REST.
  *
- * LAYOUT (owner request 2026-10-19): plain text lines, NOT embeds — each player
- * line starts with the speaker's own head, then the rank tag, the **bold** name
- * and the message:
+ * LAYOUT (owner request 2026-10-19): plain text lines, NOT embeds — head first,
+ * then the rank tag, then the name/text:
  *
  *     <:head_ab12cd34ef56:1234> [ADMIN] **KingsterVV**: btw cmere
+ *     <:head_ab12cd34ef56:1234> [ADMIN] [#8] KingsterVV joined the game
+ *
+ * EVERY line that is about a player gets the same head + rank prefix: chat (the
+ * speaker), join / quit / death (the player the line is about). Only
+ * console/broadcast and AllPurpose system lines (no player) stay bare.
  *
  * The head is the status board's cached guild emoji (same bot/guild, so it
  * renders): DiscordStatusBoard.headEmojiTag() returns the player's uploaded
@@ -278,6 +282,26 @@ public class DiscordChatLog implements Listener {
         } catch (Exception ignored) {}
     }
 
+    /**
+     * Join / quit / death: same "<head> [RANK] <text>" shape as chat, but the
+     * text is another plugin's message and is passed through untouched (the
+     * speaker is the subject here, not the author). Players with no rank and no
+     * cached head degrade to just the message, as before.
+     */
+    private void logPlayerEvent(Player p, String message) {
+        try {
+            String m = message == null ? "" : message.trim();
+            if (m.isEmpty()) return;
+            String tag = "";
+            String head = "";
+            if (p != null) {
+                try { tag = DiscordWebhook.cleanTag(plugin.getRanks().fullTagRaw(p)); } catch (Exception ignored) {}
+                head = headPrefix(p);
+            }
+            queueLine(head + (tag.isEmpty() ? "" : tag + " ") + m);
+        } catch (Exception ignored) {}
+    }
+
     // ---------- feeds ----------
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -313,7 +337,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.joinMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            queueLine(m.trim());
+            logPlayerEvent(e.getPlayer(), m);
         } catch (Exception ignored) {}
     }
 
@@ -324,7 +348,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.quitMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            queueLine(m.trim());
+            logPlayerEvent(e.getPlayer(), m);
         } catch (Exception ignored) {}
     }
 
@@ -335,7 +359,7 @@ public class DiscordChatLog implements Listener {
             String m = null;
             try { m = PlainTextComponentSerializer.plainText().serialize(e.deathMessage()); } catch (Exception ignored) {}
             if (m == null || m.trim().isEmpty()) return;
-            queueLine(m.trim());
+            logPlayerEvent(e.getEntity(), m);
         } catch (Exception ignored) {}
     }
 }
