@@ -131,6 +131,50 @@ changelog:
 # lines plus the Essentials "Rcon issued server command: /list" polling echo.
 # RCON itself keeps working — this is log-only. /allpurpose reload applies it.
 rcon-spam-filter-enabled: true
+# --- Bridge output capture (/apbridge exec) ---
+# The minecraft-bridge MCP tool can run a command three ways: plain RCON
+# (default), captured console (`method: "console"`) or captured player
+# (`method: "player"` + `as: "<name>"`, experimental).
+#
+# WHY THE CAPTURE EXISTS: `lp user X info`, `co version` and `rg list` return 0
+# bytes over plain RCON however long the bridge waits (verified live
+# 2026-10-19: 8-9 s idle, still empty), while the same commands are fine from
+# the console. Two separate reasons, both confirmed:
+#   - Paper builds the vanilla CommandSourceStack for a dispatch and hands the
+#     command the CONSOLE sender regardless of the CommandSender object passed
+#     in (a custom proxy console sender gets its output redirected to the real
+#     console; a proxy player throws "Cannot make <sender> a vanilla command
+#     listener"). So sender interception cannot work at all.
+#   - LuckPerms / CoreProtect / WorldGuard *log* their output instead of
+#     addressing the sender, and the RCON socket only ever carries messages
+#     addressed to the RCON sender.
+# So /apbridge exec logs a unique begin marker, runs the command as the
+# console, waits until logs/latest.log stops growing, logs an end marker, and
+# copies the lines between the markers into
+#   plugins/AllPurpose/bridge/<id>.txt   raw lines
+#   plugins/AllPurpose/bridge/<id>.json  meta, written LAST (= payload ready)
+# The bridge polls those over SFTP; its RCON reply is only a short ack.
+#
+# Console/RCON only: a player can never run it. Files are pruned each call.
+bridge:
+  enabled: true
+  # Experimental player:<name> = run as that REAL online player. The point is
+  # commands that refuse a console sender. Hard limit: output that goes only to
+  # that player's chat cannot be read (no client connection) - only what the
+  # command also logs is captured, and the player does receive it. An offline
+  # target is refused and the bridge retries with method console.
+  allow-player-mode: true
+  # Never finish a capture before this, even if the log is idle: a plugin can
+  # answer slightly late (LuckPerms logs on its own executor).
+  min-wait-ms: 1000
+  # ...then finish once the log has not grown for this long.
+  quiet-ms: 600
+  # Hard cap per call, so a chatty server can never keep the watcher running.
+  max-wait-ms: 8000
+  # Payload cap (chars); longer output is cut and flagged in the meta.
+  max-bytes: 262144
+  # Captures older than this are deleted on the next call.
+  keep-minutes: 60
 # --- Linked survival server (/survival, open to all) ---
 transfer-host: "15.235.212.121"
 transfer-port: 10066

@@ -37,6 +37,11 @@ commands:
     description: "Server changelog shown as dialogs (pause menu + /changelog show)."
     usage: "/changelog create <version> [text] | add <version> <text> | lines|setline|insertline|delline <version> ... | title|label <version> <text> | remove <version> | list | show [version] [player] | screen <on|off> | sync | reload"
     aliases: [changelogs]
+  apbridge:
+    description: "Captured-dispatch exec for the minecraft-bridge MCP tool (console/RCON only)."
+    usage: "/apbridge exec <id> <console|player:<name>> <command...>"
+    aliases: [bridgeexec]
+    permission: allpurpose.bridge
 permissions:
   rank.admin:
     description: Manage ranks
@@ -68,3 +73,6 @@ permissions:
   allpurpose.commandguard.bypass:
     description: "Exempt from the blocked-command guard (/effect /summon /tick rate /enchant)"
     default: false
+  allpurpose.bridge:
+    description: "Run /apbridge exec (captured command dispatch for the minecraft-bridge MCP tool)"
+    default: op

@@ -389,6 +389,10 @@ public class AllPurpose extends JavaPlugin {
             getCommand("changelog").setExecutor(changelogCmd);
             getCommand("changelog").setTabCompleter(changelogCmd);
         }
+        // Bridge output capture (/apbridge exec): the MCP tool's console /
+        // player methods for plugins whose reply the RCON socket drops
+        // (LuckPerms, CoreProtect, WorldGuard region commands).
+        if (getCommand("apbridge") != null) getCommand("apbridge").setExecutor(new BridgeExecCommand(this));
         // Nametag (rank tags). Clean up tag holograms orphaned by a
         // /reload or a crash, then keep them in sync.
         try { nametag.clearOrphanTagHolo(); } catch (Exception ignored) {}
