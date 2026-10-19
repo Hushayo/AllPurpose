@@ -193,6 +193,24 @@ update-enabled: true
 update-repo: "Hushayo/AllPurpose"
 update-asset-name: "AllPurpose.jar"
 
+# --- Spectator live-cam stale guard (spare-laptop screenshots, separate) ---
+# The cam script on spare edits ONE message (marker SPAWN_CAM_LIVE) in the
+# board channel. If its Discord edited_timestamp is older than stale-minutes
+# (spare MC closed, laptop dead), this DELETES the message. Empty channel-id
+# = same channel as the status board. /allpurpose reload applies.
+discord-spectator-cam:
+  enabled: true
+  channel-id: ""
+  stale-minutes: 10
+  check-minutes: 3
+
+# --- Auto-login (LoginSecurity) for specific accounts ---
+# Names here are logged in automatically right after they join (via the
+# LoginSecurity API, no password typed). Used for the spare-laptop spectator
+# so a restart never leaves it stuck at the /login prompt. Empty = off.
+auth-auto-login-players:
+- ruzzer
+
 # --- Discord spawn snapshot (top-down spawn render, ONE message, edited) ---
 # No bot slot, no browser, no new infra: renders loaded chunks around the
 # main world's spawn to PNG and edits one message in place. Same bot token as

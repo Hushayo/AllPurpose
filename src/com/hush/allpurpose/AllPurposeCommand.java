@@ -60,6 +60,7 @@ public class AllPurposeCommand implements CommandExecutor, TabCompleter {
             try { plugin.pruneStaleConfig(); } catch (Exception ignored) {}
             try { if (plugin.getStatusBoard() != null) plugin.getStatusBoard().reload(); } catch (Exception ignored) {}
             try { if (plugin.getSpawnSnapshot() != null) plugin.getSpawnSnapshot().reload(); } catch (Exception ignored) {}
+            try { if (plugin.getSpectatorCam() != null) plugin.getSpectatorCam().reload(); } catch (Exception ignored) {}
             try {
                 if (plugin.getConfig().getBoolean("rcon-spam-filter-enabled", true)) RconSpamFilter.install(plugin);
                 else RconSpamFilter.uninstall();
