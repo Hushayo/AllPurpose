@@ -338,6 +338,11 @@ auth-auto-login-players:
 # main world's spawn to PNG and edits one message in place. Same bot token as
 # the board above. Unloaded chunks are skipped (never generated). Channel-id
 # empty = same channel as the board. /allpurpose reload applies.
+# The image reads like a map (vanilla-ish block colours, height shading,
+# 32-block grid, north-up compass) and marks every player standing inside the
+# view with a coloured pin; the message text lists them with distance,
+# direction and Y, plus how many are online further out / in other worlds.
+# radius-blocks = half the width of the square view (128 = 256x256 blocks).
 discord-snapshot:
   enabled: true
   channel-id: ""
