@@ -41,6 +41,12 @@ import org.bukkit.scheduler.BukkitTask;
  *  - show WHO is there (pins + a legend with distance/direction), because the
  *    spawn build itself never changes.
  *
+ * Positions are deliberately coarse. A pin is the centre of a 16-block cell,
+ * distances round to 16 blocks, Y is a 16-block bucket and facing is not shown
+ * at all: the view reaches past the spawn region (pvp: deny), so an exact pin
+ * plus a facing tail would be a locator for hunting players in the band
+ * outside it. Keep this quantised -- see CELL below.
+ *
  * Capture runs on the main thread (chunk snapshots are cheap copies, unloaded
  * chunks are skipped, never generated); render + upload run async. Uploads
  * via the same bot token as the status board (discord-status.bot-token).
@@ -60,6 +66,12 @@ public class SpawnSnapshot {
     };
     /** Flag bit on a captured colour: do not apply height shading (liquids). */
     private static final int NO_SHADE = 0x01000000;
+    /**
+     * Player position resolution, in blocks. Pins sit on cell centres, distances
+     * round to a multiple of this and Y is floored to it, so nothing in the
+     * rendered image or the legend is block-exact.
+     */
+    private static final int CELL = 16;
 
     private final AllPurpose plugin;
     private HttpClient http = null;
@@ -184,12 +196,12 @@ public class SpawnSnapshot {
 
     // ---------- capture (main thread) then upload (async) ----------
 
-    /** One player standing inside the rendered view. */
+    /** One player standing inside the rendered view. Coarse by construction. */
     private static final class Pin {
         String name = "";
-        int bx, bz, by;
-        float yaw;
-        int dist;
+        int bx, bz;   // centre of the player's CELL-sized cell, never their block
+        int by;       // CELL-floored Y, never their exact height
+        int dist;     // blocks from spawn, rounded to CELL
         String dir = "N";
         int dot;
     }
@@ -330,12 +342,14 @@ public class SpawnSnapshot {
                 }
                 Pin pin = new Pin();
                 pin.name = name;
-                pin.bx = bx;
-                pin.bz = bz;
-                pin.by = loc.getBlockY();
-                pin.yaw = loc.getYaw();
-                pin.dist = (int) Math.round(Math.sqrt((double) ddx * ddx + (double) ddz * ddz));
-                pin.dir = compass(ddx, ddz);
+                // Quantised before it is stored: nothing downstream ever sees the real block.
+                pin.bx = clampTo(cellCentre(bx), f.originX, f.originX + f.size - 1);
+                pin.bz = clampTo(cellCentre(bz), f.originZ, f.originZ + f.size - 1);
+                pin.by = Math.floorDiv(loc.getBlockY(), CELL) * CELL;
+                int qdx = pin.bx - cx;
+                int qdz = pin.bz - cz;
+                pin.dist = roundDist(Math.sqrt((double) qdx * qdx + (double) qdz * qdz));
+                pin.dir = compass(qdx, qdz);
                 f.pins.add(pin);
             } catch (Exception ignored) {}
         }
@@ -355,6 +369,21 @@ public class SpawnSnapshot {
         int sector = (int) Math.round(deg / 45.0) % 8;
         String[] names = {"N", "NE", "E", "SE", "S", "SW", "W", "NW"};
         return names[sector];
+    }
+
+    /** Centre of the CELL-sized cell containing a coordinate. */
+    private static int cellCentre(int v) {
+        return Math.floorDiv(v, CELL) * CELL + CELL / 2;
+    }
+
+    /** Distance rounded to whole cells; one cell minimum means "at spawn". */
+    private static int roundDist(double d) {
+        int q = (int) Math.round(d / CELL) * CELL;
+        return Math.max(CELL, q);
+    }
+
+    private static int clampTo(int v, int lo, int hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 
     // ---------- palette ----------
@@ -575,7 +604,7 @@ public class SpawnSnapshot {
                 else d.append("No players within ").append(f.radius).append(" blocks of spawn.");
             } else {
                 d.append("**").append(f.pins.size()).append(f.pins.size() == 1 ? " player" : " players")
-                        .append("** around spawn:\n");
+                        .append("** around spawn (").append(CELL).append("-block cells):\n");
                 int shown = 0;
                 for (Pin p : f.pins) {
                     if (shown++ >= 10) {
@@ -583,9 +612,9 @@ public class SpawnSnapshot {
                         break;
                     }
                     d.append(PIN_DOTS[p.dot]).append(" **").append(p.name).append("** \u00B7 ");
-                    if (p.dist <= 1) d.append("at spawn");
-                    else d.append(p.dist).append(" blocks ").append(p.dir);
-                    d.append(" \u00B7 y").append(p.by).append("\n");
+                    if (p.dist <= CELL) d.append("at spawn");
+                    else d.append("~").append(p.dist).append(" blocks ").append(p.dir);
+                    d.append(" \u00B7 ~y").append(p.by).append("\n");
                 }
             }
             if (f.outside > 0) {
@@ -674,25 +703,25 @@ public class SpawnSnapshot {
             g.drawLine(mx - arm, mz, mx + arm, mz);
             g.drawLine(mx, mz - arm, mx, mz + arm);
 
-            // 4) player pins, farthest first so the nearest ends up on top
+            // 4) player pins, farthest first so the nearest ends up on top.
+            //    Each pin is a CELL-sized square with a disc in its centre: the
+            //    player is somewhere in that area, not on that pixel. No facing
+            //    tail -- yaw is the most tactical detail and is never published.
             int radius = Math.max(7, scale * 3);
             for (int i = f.pins.size() - 1; i >= 0; i--) {
                 Pin p = f.pins.get(i);
+                int rgb = PIN_COLORS[p.dot];
+                int cr = (rgb >> 16) & 0xFF, cg = (rgb >> 8) & 0xFF, cb = rgb & 0xFF;
+                int cellX = (p.bx - CELL / 2 - f.originX) * scale;
+                int cellZ = (p.bz - CELL / 2 - f.originZ) * scale;
+                g.setColor(new Color(cr, cg, cb, 70));
+                g.fillRect(cellX, cellZ, CELL * scale, CELL * scale);
+                g.setColor(new Color(cr, cg, cb, 160));
+                g.setStroke(new BasicStroke(1.5f));
+                g.drawRect(cellX, cellZ, CELL * scale, CELL * scale);
+                // disc: dark outline, white ring, colour
                 int px = (p.bx - f.originX) * scale + scale / 2;
                 int py = (p.bz - f.originZ) * scale + scale / 2;
-                int rgb = PIN_COLORS[p.dot];
-                // facing tail (yaw 0 = south/+z, 90 = west/-x)
-                double yaw = Math.toRadians(p.yaw);
-                double vx = -Math.sin(yaw);
-                double vy = Math.cos(yaw);
-                double len = radius * 2.1;
-                g.setStroke(new BasicStroke(radius, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                g.setColor(new Color(0x101014));
-                g.drawLine(px, py, (int) Math.round(px + vx * (len + 2)), (int) Math.round(py + vy * (len + 2)));
-                g.setStroke(new BasicStroke(Math.max(3f, radius * 0.6f), BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                g.setColor(new Color(rgb));
-                g.drawLine(px, py, (int) Math.round(px + vx * len), (int) Math.round(py + vy * len));
-                // disc: dark outline, white ring, colour
                 disc(g, px, py, radius + 3, 0x101014);
                 disc(g, px, py, radius + 2, 0xFFFFFF);
                 disc(g, px, py, radius, rgb);

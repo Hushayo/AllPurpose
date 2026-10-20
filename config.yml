@@ -340,8 +340,12 @@ auth-auto-login-players:
 # empty = same channel as the board. /allpurpose reload applies.
 # The image reads like a map (vanilla-ish block colours, height shading,
 # 32-block grid, north-up compass) and marks every player standing inside the
-# view with a coloured pin; the message text lists them with distance,
-# direction and Y, plus how many are online further out / in other worlds.
+# view with a coloured pin; the message text lists them with a coarse distance,
+# direction and Y band, plus how many are online further out / in other worlds.
+# Positions are deliberately quantised: a pin is the centre of a 16-block cell,
+# distance rounds to 16 blocks and Y to a 16-block bucket. Do not make them
+# exact -- the view reaches past the (pvp-deny) spawn region, so an exact pin
+# becomes a locator for hunting players in the band outside it.
 # radius-blocks = half the width of the square view (128 = 256x256 blocks).
 discord-snapshot:
   enabled: true
