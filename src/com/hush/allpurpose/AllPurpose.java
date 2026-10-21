@@ -28,6 +28,7 @@ public class AllPurpose extends JavaPlugin {
     private WealthTaxManager wealthTax;
     private StarterGrantManager starterGrant;
     private PrizeDrawManager prizeDraw;
+    private CombatManager combat;
 
     private AllPurposeAPI api;
 
@@ -117,6 +118,11 @@ public class AllPurpose extends JavaPlugin {
 
     public PrizeDrawManager getPrizeDraw() {
         return prizeDraw;
+    }
+
+    /** Combat tag + combat-log detection + the shame ceremony. */
+    public CombatManager getCombat() {
+        return combat;
     }
 
     public String rankDisplayName(UUID id) {
@@ -294,6 +300,22 @@ public class AllPurpose extends JavaPlugin {
         if (changelog == null) { try { changelog = new ChangelogManager(this); } catch (Exception ignored) {} }
         try { if (changelog != null) changelog.boot(); } catch (Exception e) { getLogger().warning("Changelog init failed: " + e.getMessage()); }
         webhook = new DiscordWebhook(this);
+        // Combat tag + combat-log detection + shame ceremony (MD plan 1-5).
+        combat = new CombatManager(this);
+        try {
+            combat.boot();
+            getServer().getPluginManager().registerEvents(new CombatListener(this, combat), this);
+            getServer().getPluginManager().registerEvents(combat.getCeremony(), this);
+            ShameCommand shameCmd = new ShameCommand(this);
+            if (getCommand("shame") != null) {
+                getCommand("shame").setExecutor(shameCmd);
+                getCommand("shame").setTabCompleter(shameCmd);
+            }
+            getLogger().info("Combat-log: tag " + combat.tagSeconds() + "s, ceremony "
+                    + (combat.shameEnabled() ? "on" : "off") + ".");
+        } catch (Exception e) {
+            getLogger().warning("Combat-log init failed: " + e.getMessage());
+        }
         try { leaderboard.refreshBalTop(); } catch (Exception ignored) {}
         try {
             Bukkit.getScheduler().runTaskTimer(this, new Runnable() {
@@ -428,6 +450,7 @@ public class AllPurpose extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        try { if (combat != null) combat.shutdown(); } catch (Exception ignored) {}
         // Staged repo update swaps here, during a real shutdown/restart only.
         try { if (updater != null) updater.applyPendingOnShutdown(); } catch (Exception ignored) {}
         try { RconSpamFilter.flush(this); } catch (Exception ignored) {}
