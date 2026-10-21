@@ -304,6 +304,8 @@ discord-commandlog:
   console: true                # commands typed into the server console
   rcon: true                   # commands sent over RCON (bridge / panel)
   include-bots: false          # bots.yml accounts spam; keep them out
+  uuid-in-discord: false       # UUID stays in the local file only
+  coords-in-discord: false     # exact x/y/z stay in the local file only; Discord gets "@ world"
   file: true
   file-dir: "commandlog"
   batch-seconds: 2             # async flush cadence (one message per feed per flush)

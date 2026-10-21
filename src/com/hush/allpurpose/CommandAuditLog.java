@@ -97,8 +97,23 @@ public class CommandAuditLog implements Listener {
     private static final Pattern SECTION = Pattern.compile("(?i)\u00A7[0-9a-fk-orx]");
 
     private final AllPurpose plugin;
-    private final ConcurrentLinkedQueue<String> commands = new ConcurrentLinkedQueue<>();
-    private final ConcurrentLinkedQueue<String> dms = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Line> commands = new ConcurrentLinkedQueue<>();
+    private final ConcurrentLinkedQueue<Line> dms = new ConcurrentLinkedQueue<>();
+
+    /**
+     * One audit event in two renderings: {@link #file} is the exact evidence
+     * line (UUID + coordinates included), {@link #discord} is the same line
+     * with both removed. The Discord feed is read by more people than the local
+     * file, and a command typed at a base must not become a locator.
+     */
+    private static final class Line {
+        final String file;
+        final String discord;
+        Line(String file, String discord) {
+            this.file = file;
+            this.discord = discord;
+        }
+    }
     private final AtomicInteger cmdDropped = new AtomicInteger();
     private final AtomicInteger dmDropped = new AtomicInteger();
     private final AtomicBoolean started = new AtomicBoolean(false);
@@ -273,27 +288,39 @@ public class CommandAuditLog implements Listener {
 
         Location loc = null;
         try { loc = p.getLocation(); } catch (Exception ignored) {}
-        StringBuilder b = new StringBuilder();
-        b.append(ts()).append(' ').append(tag(p)).append(name(p));
-        b.append(" (").append(p.getUniqueId()).append(") /").append(redactCommand(name, args));
+        String cmd = redactCommand(name, args);
+        String head = ts() + " " + tag(p) + name(p);
+        // The file is the evidence copy: UUID and exact position are useful
+        // there. The Discord copy drops both by default, because the channel is
+        // read by more people and a command typed at a base otherwise becomes a
+        // locator. `uuid-in-discord` / `coords-in-discord` re-enable them.
+        String fileLine = head + " (" + p.getUniqueId() + ") /" + cmd;
+        String discordLine = head
+                + (cfgBool("uuid-in-discord", false) ? " (" + p.getUniqueId() + ")" : "")
+                + " /" + cmd;
         if (loc != null) {
-            b.append(" @ ").append(loc.getWorld() == null ? "?" : loc.getWorld().getName())
-                    .append(' ').append(loc.getBlockX())
-                    .append(' ').append(loc.getBlockY())
-                    .append(' ').append(loc.getBlockZ());
+            String world = loc.getWorld() == null ? "?" : loc.getWorld().getName();
+            String coords = " @ " + world + " " + loc.getBlockX() + " "
+                    + loc.getBlockY() + " " + loc.getBlockZ();
+            fileLine += coords;
+            discordLine += cfgBool("coords-in-discord", false) ? coords : " @ " + world;
         }
-        offer(commands, b.toString(), cmdDropped);
+        offer(commands, fileLine, discordLine, cmdDropped);
     }
 
-    private void offer(ConcurrentLinkedQueue<String> q, String line, AtomicInteger dropped) {
+    private void offer(ConcurrentLinkedQueue<Line> q, String line, AtomicInteger dropped) {
+        offer(q, line, line, dropped);
+    }
+
+    private void offer(ConcurrentLinkedQueue<Line> q, String file, String discord, AtomicInteger dropped) {
         try {
-            if (line == null || line.isEmpty()) return;
+            if (file == null || file.isEmpty()) return;
             int cap = cfgInt("queue-cap", 2000, 50, 20000);
             if (q.size() >= cap) {
                 q.poll();
                 dropped.incrementAndGet();
             }
-            q.add(line);
+            q.add(new Line(file, discord == null ? file : discord));
         } catch (Exception ignored) {}
     }
 
@@ -349,28 +376,34 @@ public class CommandAuditLog implements Listener {
      * Drain a feed: everything goes to the local file, a bounded slice goes to
      * Discord. `channel` empty = file-only feed (the default for DMs).
      */
-    private void flushQueue(ConcurrentLinkedQueue<String> q, String kind,
+    private void flushQueue(ConcurrentLinkedQueue<Line> q, String kind,
                             AtomicInteger dropped, String channel) {
         if (q.isEmpty()) return;
         int cap = cfgInt("queue-cap", 2000, 50, 20000);
-        List<String> take = new ArrayList<>();
+        List<Line> take = new ArrayList<>();
         while (take.size() < cap) {
-            String s = q.poll();
+            Line s = q.poll();
             if (s == null) break;
             take.add(s);
         }
         if (take.isEmpty()) return;
 
-        appendFile(kind, take);
+        List<String> fileLines = new ArrayList<>(take.size());
+        List<String> sendLines = new ArrayList<>(take.size());
+        for (Line l : take) {
+            fileLines.add(l.file);
+            if (l.discord != null && !l.discord.isEmpty()) sendLines.add(l.discord);
+        }
+        appendFile(kind, fileLines);
 
         if (channel == null || channel.isEmpty() || !channel.matches("\\d{10,25}")) return;
         if (token().isEmpty()) return;
 
         int budget = cfgInt("discord-lines-per-flush", 24, 1, 200);
-        List<String> show = take.size() <= budget
-                ? take
-                : new ArrayList<>(take.subList(0, budget));
-        int hidden = take.size() - show.size();
+        List<String> show = sendLines.size() <= budget
+                ? sendLines
+                : new ArrayList<>(sendLines.subList(0, budget));
+        int hidden = sendLines.size() - show.size();
 
         List<String> messages = chunk(show);
         if (messages.isEmpty()) return;
