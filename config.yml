@@ -661,14 +661,30 @@ combat-log:
     base-seconds: 15
     second-seconds: 30
     third-seconds: 60
-    base-fish: 12
-    fish-per-offence: 3
-    max-fish: 24
-    # Frozen + invulnerable while the fish judge you.
+    base-mobs: 10
+    mobs-per-offence: 2
+    max-mobs: 16
+    # Frozen + invulnerable while the tribunal judges you.
     invulnerable: true
     # Ping holders of allpurpose.shame.admin at 3+ offences.
     staff-ping: true
-    broadcast: '&c{player} &7combat logged and is now being fished at.'
+    # Showmanship: lightning, particles, the mob tribunal, layered music.
+    effects: true
+    # Shared boss-bar countdown for the offender + everyone nearby.
+    boss-bar: true
+    # Lines the mob mutters during the ceremony (one every 10s).
+    taunts:
+    - 'the villagers voted. it was unanimous.'
+    - 'the chickens saw everything.'
+    - 'GUILTY. obviously.'
+    - 'the judge is a pumpkin. he is not amused.'
+    - 'skill issue, says the jury.'
+    - 'the gavel has spoken.'
+    - 'your PvP licence is under review.'
+    - 'objection overruled. you logged out.'
+    - 'the tribunal accepts bribes. you have none.'
+    - 'case closed. case reopened. still guilty.'
+    broadcast: '&c{player} &7combat logged - the mob tribunal is now in session.'
   # One line to the Discord webhook (discord-events.combat gates it).
   discord-alerts: true
 

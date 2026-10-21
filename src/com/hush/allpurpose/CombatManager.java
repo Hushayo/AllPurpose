@@ -99,6 +99,8 @@ public class CombatManager {
     private boolean shameEnabled = true;
     private boolean shameInvulnerable = true;
     private boolean shamePing = true;
+    private boolean shameEffects = true;
+    private boolean shameBossBar = true;
     private boolean discordAlerts = true;
     private int tagSeconds = 15;
     private int maxTagSeconds = 30;
@@ -106,9 +108,9 @@ public class CombatManager {
     private int shameBaseSeconds = 15;
     private int shameSecondSeconds = 30;
     private int shameThirdSeconds = 60;
-    private int shameBaseFish = 12;
-    private int shameFishStep = 3;
-    private int shameMaxFish = 24;
+    private int shameBaseFish = 10;
+    private int shameFishStep = 2;
+    private int shameMaxFish = 16;
     private String bypassPermission = "allpurpose.combat.bypass";
     private String shameBroadcast = "&c{player} combat logged and is now being fished at.";
 
@@ -150,13 +152,18 @@ public class CombatManager {
             shameEnabled = plugin.getConfig().getBoolean("combat-log.shame.enabled", true);
             shameInvulnerable = plugin.getConfig().getBoolean("combat-log.shame.invulnerable", true);
             shamePing = plugin.getConfig().getBoolean("combat-log.shame.staff-ping", true);
+            shameEffects = plugin.getConfig().getBoolean("combat-log.shame.effects", true);
+            shameBossBar = plugin.getConfig().getBoolean("combat-log.shame.boss-bar", true);
             discordAlerts = plugin.getConfig().getBoolean("combat-log.discord-alerts", true);
             shameBaseSeconds = Math.max(5, plugin.getConfig().getInt("combat-log.shame.base-seconds", 15));
             shameSecondSeconds = Math.max(shameBaseSeconds, plugin.getConfig().getInt("combat-log.shame.second-seconds", 30));
             shameThirdSeconds = Math.max(shameSecondSeconds, plugin.getConfig().getInt("combat-log.shame.third-seconds", 60));
-            shameBaseFish = Math.max(0, plugin.getConfig().getInt("combat-log.shame.base-fish", 12));
-            shameFishStep = Math.max(0, plugin.getConfig().getInt("combat-log.shame.fish-per-offence", 3));
-            shameMaxFish = Math.max(shameBaseFish, plugin.getConfig().getInt("combat-log.shame.max-fish", 24));
+            shameBaseFish = Math.max(3, plugin.getConfig().getInt("combat-log.shame.base-mobs",
+                    plugin.getConfig().getInt("combat-log.shame.base-fish", 10)));
+            shameFishStep = Math.max(0, plugin.getConfig().getInt("combat-log.shame.mobs-per-offence",
+                    plugin.getConfig().getInt("combat-log.shame.fish-per-offence", 2)));
+            shameMaxFish = Math.max(shameBaseFish, plugin.getConfig().getInt("combat-log.shame.max-mobs",
+                    plugin.getConfig().getInt("combat-log.shame.max-fish", 16)));
             bypassPermission = plugin.getConfig().getString("combat-log.bypass-permission", "allpurpose.combat.bypass");
             shameBroadcast = plugin.getConfig().getString("combat-log.shame.broadcast",
                     "&c{player} combat logged and is now being fished at.");
@@ -507,6 +514,8 @@ public class CombatManager {
     public boolean shameEnabled() { return shameEnabled; }
     public boolean shameInvulnerable() { return shameInvulnerable; }
     public boolean shamePing() { return shamePing; }
+    public boolean shameEffects() { return shameEffects; }
+    public boolean shameBossBar() { return shameBossBar; }
     public int tagSeconds() { return tagSeconds; }
     public String bypassPermission() { return bypassPermission; }
 
@@ -516,7 +525,7 @@ public class CombatManager {
         return shameThirdSeconds;
     }
 
-    public int shameFish(int offence) {
+    public int shameMobCount(int offence) {
         long count = (long) shameBaseFish + (long) shameFishStep * Math.max(0, offence - 1);
         return (int) Math.min(shameMaxFish, Math.max(0L, count));
     }
