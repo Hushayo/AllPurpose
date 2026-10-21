@@ -35,9 +35,11 @@ import org.bukkit.inventory.ItemStack;
  *   plain right-click   -> trade at someone else's shop (opens the confirm GUI)
  *   plain right-click on your own -> the chest opens, exactly as vanilla
  *
- * A sneak-click that would place a block always stays vanilla. Sneaking is how
- * you build on top of / against a container, so the shop screens must not take
- * that click - otherwise a shop chest can never be built around.
+ * A sneak-click that would place a block (or something placed onto a block face
+ * - an item frame, a painting, an armour stand) always stays vanilla. Sneaking is
+ * how you build on top of / against a container, so the shop screens must not
+ * take that click - otherwise a shop chest can never be built around, and
+ * nothing can be hung on a chest.
  *
  * Guards: nobody but the owner (or staff) can open, break, blow up, push or
  * hopper-drain a shop's container.
@@ -62,11 +64,12 @@ public class ShopListener implements Listener {
             if (b == null) return;
             Player p = e.getPlayer();
 
-            // Sneak-clicking with a placeable block in hand is vanilla block
-            // placement - the only way to put a block on top of / against a
-            // container. Never swallow that click, or a chest in a tight spot
-            // (where the chest is the only surface to aim at) cannot be built on.
-            if (a == Action.RIGHT_CLICK_BLOCK && isBlockPlacement(p, e, b)) return;
+            // Sneak-clicking to build is vanilla block placement - the only way to
+            // put a block on top of / against a container, and the only way to hang
+            // an item frame, glow frame, painting or armour stand on one. Never
+            // swallow that click, or a chest in a tight spot (where the chest is the
+            // only surface to aim at) cannot be built on or decorated.
+            if (a == Action.RIGHT_CLICK_BLOCK && isVanillaPlacement(p, e, b)) return;
 
             ShopManager m = plugin.getShop();
             ShopManager.Shop s = m.at(b);
@@ -137,27 +140,47 @@ public class ShopListener implements Listener {
     }
 
     /**
-     * True when a sneak-click is really the player placing a block, not a shop
-     * gesture: sneaking, a block in hand, and somewhere legal to put it.
+     * True when a sneak-click is really the player placing something, not a shop
+     * gesture: sneaking, a placeable item in hand, and somewhere legal to put it.
      *
      * Vanilla only needs the sneak on a container (otherwise it opens), and that
-     * is exactly the click the shop screens otherwise take over. The
-     * "somewhere legal" test keeps the shop reachable whenever the placement
-     * could not have happened anyway - e.g. the block above a chest is already
-     * taken in a cramped space, the click is ours again.
+     * is exactly the click the shop screens otherwise take over - so both blocks
+     * and the items vanilla turns into an entity on the clicked face (item frames,
+     * paintings, armour stands) count as placement. The "somewhere legal" test
+     * keeps the shop reachable whenever the placement could not have happened
+     * anyway - e.g. the block above a chest is already taken in a cramped space,
+     * or there is no free cell in front of the face, the click is ours again.
      */
-    private static boolean isBlockPlacement(Player p, PlayerInteractEvent e, Block clicked) {
+    private static boolean isVanillaPlacement(Player p, PlayerInteractEvent e, Block clicked) {
         try {
             if (!p.isSneaking()) return false;
             ItemStack it = e.getItem();
             if (it == null) return false;
             Material type = it.getType();
-            if (type == null || type == Material.AIR || !type.isBlock()) return false;
+            if (type == null || type == Material.AIR) return false;
+            if (!type.isBlock() && !isFacePlacementItem(type)) return false;
             BlockFace face = e.getBlockFace();
             if (face == null) return false;
             return clicked.getRelative(face).isReplaceable();
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    /**
+     * Items that are not blocks but are still placed onto the clicked block face,
+     * so vanilla needs the sneak on a container for them too. Without this an item
+     * frame could never be hung on a chest - the shop gesture would eat the click.
+     */
+    private static boolean isFacePlacementItem(Material type) {
+        switch (type) {
+            case ITEM_FRAME:
+            case GLOW_ITEM_FRAME:
+            case PAINTING:
+            case ARMOR_STAND:
+                return true;
+            default:
+                return false;
         }
     }
 
