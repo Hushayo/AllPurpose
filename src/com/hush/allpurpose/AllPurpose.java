@@ -15,6 +15,7 @@ public class AllPurpose extends JavaPlugin {
     private DiscordWebhook webhook;
     private DiscordStatusBoard statusBoard;
     private DiscordChatLog chatLog;
+    private CommandAuditLog auditLog;
     private SpectatorCam spectatorCam;
     private AuthAutoLogin authAutoLogin;
     private SpawnSnapshot spawnSnapshot;
@@ -67,6 +68,11 @@ public class AllPurpose extends JavaPlugin {
 
     public DiscordChatLog getChatLog() {
         return chatLog;
+    }
+
+    /** Command + private-message audit log (Discord channels + local files). */
+    public CommandAuditLog getAuditLog() {
+        return auditLog;
     }
 
     public SpectatorCam getSpectatorCam() {
@@ -304,6 +310,10 @@ public class AllPurpose extends JavaPlugin {
         statusBoard = new DiscordStatusBoard(this);
         statusBoard.start();
         chatLog = new DiscordChatLog(this);
+        // Command + DM audit log (rule 12): everything to a local file, a
+        // bounded slice to Discord. Reads its config per call.
+        auditLog = new CommandAuditLog(this);
+        auditLog.start();
         spawnSnapshot = new SpawnSnapshot(this);
         spectatorCam = new SpectatorCam(this);
         spectatorCam.start();
@@ -345,6 +355,7 @@ public class AllPurpose extends JavaPlugin {
         try { getServer().getPluginManager().registerEvents(new CommandGuard(this), this); } catch (Exception ignored) {}
         try { getServer().getPluginManager().registerEvents(webhook, this); } catch (Exception ignored) {}
         try { if (chatLog != null) getServer().getPluginManager().registerEvents(chatLog, this); } catch (Exception ignored) {}
+        try { if (auditLog != null) getServer().getPluginManager().registerEvents(auditLog, this); } catch (Exception ignored) {}
         RankCommand rankCmd = new RankCommand(this);
         if (getCommand("rank") != null) {
             getCommand("rank").setExecutor(rankCmd);
@@ -421,6 +432,7 @@ public class AllPurpose extends JavaPlugin {
         try { if (updater != null) updater.applyPendingOnShutdown(); } catch (Exception ignored) {}
         try { RconSpamFilter.flush(this); } catch (Exception ignored) {}
         try { if (webhook != null) webhook.shutdownFlush(null); } catch (Exception ignored) {}
+        try { if (auditLog != null) auditLog.shutdownFlush(); } catch (Exception ignored) {}
         try { RconSpamFilter.uninstall(); } catch (Exception ignored) {}
         try { if (statusBoard != null) statusBoard.markOfflineSync(); } catch (Exception ignored) {}
         try { if (statusBoard != null) statusBoard.shutdown(); } catch (Exception ignored) {}

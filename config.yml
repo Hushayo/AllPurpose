@@ -275,6 +275,45 @@ discord-chatlog:
   joins: true
   deaths: true
 
+# --- Discord command + DM audit log (rule 12: "ingame and Discord") ---
+# Two SEPARATE feeds on the STATUS BOT (same token, no webhook):
+#   command log -> channel-id      (staff-only channel)
+#   DM log      -> dm-channel-id   (owner + developer only; empty = file only)
+# Every line is also mirrored to
+#   plugins/AllPurpose/commandlog/commands-YYYY-MM-DD.log
+#   plugins/AllPurpose/commandlog/dms-YYYY-MM-DD.log
+# so the record survives a deleted channel, a bot outage or a restart, and it
+# covers the gap CoreProtect cannot: commands, console actions, private messages.
+#
+# Capture is PlayerCommandPreprocessEvent (players) + ServerCommandEvent
+# (console/RCON) at MONITOR with ignoreCancelled=false, so BLOCKED attempts
+# (/op, guarded commands) are recorded too, not just the ones that ran.
+#
+# Never written, in Discord or in the file: /login /register /changepassword
+# /email /auth /2fa ... (logged as "<name> <redacted>"), webhook URLs and
+# token=... arguments. Add any other credential-taking command to
+# redact-commands.
+#
+# Note for the rule text: this covers every ingame command and /msg-style
+# private message, mirrored to Discord. It does NOT read Discord DMs.
+discord-commandlog:
+  enabled: true
+  channel-id: "1562354261466153040"
+  dms: true
+  dm-channel-id: ""            # empty = the DM feed stays in the local file only
+  console: true                # commands typed into the server console
+  rcon: true                   # commands sent over RCON (bridge / panel)
+  include-bots: false          # bots.yml accounts spam; keep them out
+  file: true
+  file-dir: "commandlog"
+  batch-seconds: 2             # async flush cadence (one message per feed per flush)
+  discord-lines-per-flush: 24
+  max-posts-per-flush: 3       # hard cap; the rest becomes one "… +N more" line
+  queue-cap: 2000              # overflow drops oldest and reports the count
+  ignore-commands: [spawn, home, sethome, tpa, tpahere, tpaccept, tpdeny, back, warp]
+  dm-commands: [msg, tell, whisper, emsg, pm, dm, r, reply]
+  redact-commands: [login, register, changepassword, changepass, passwd, password, email, auth, 2fa, totp, unregister, setpassword]
+
 # --- Discord live status board (bot, edits ONE message every 15s) ---
 # Needs a BOT token (not a webhook): Discord Developer Portal -> your app ->
 # Bot -> Reset Token, then invite the bot with View Channel + Send Messages +
