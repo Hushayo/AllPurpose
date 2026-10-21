@@ -42,10 +42,6 @@ commands:
     usage: "/apbridge exec <id> <console|player:<name>> <command...>"
     aliases: [bridgeexec]
     permission: allpurpose.bridge
-  shame:
-    description: "Combat-log shame ceremony (test/status/clear/reload)."
-    usage: "/shame test <player> | /shame status <player> | /shame clear <player> | /shame reload"
-    permission: allpurpose.shame.admin
 permissions:
   rank.admin:
     description: Manage ranks
@@ -80,9 +76,3 @@ permissions:
   allpurpose.bridge:
     description: "Run /apbridge exec (captured command dispatch for the minecraft-bridge MCP tool)"
     default: op
-  allpurpose.shame.admin:
-    description: "Combat-log shame ceremony admin (/shame test|status|clear|reload)"
-    default: op
-  allpurpose.combat.bypass:
-    description: "Exempt from combat tagging, command locks and combat-log punishment"
-    default: false
