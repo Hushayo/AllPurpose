@@ -157,6 +157,56 @@ public final class TextUtil {
         return out.toString();
     }
 
+    /**
+     * Rotates a 6-char hex colour around the hue wheel by {@code degrees}.
+     * The rank animator shifts both gradient ends by the same amount, so the
+     * gradient at phase 0 and phase 1 is identical and the loop is seamless.
+     */
+    public static String rotateHue(String hex, double degrees) {
+        if (hex == null || hex.length() != 6) return hex;
+        try {
+            int r = Integer.parseInt(hex.substring(0, 2), 16);
+            int g = Integer.parseInt(hex.substring(2, 4), 16);
+            int b = Integer.parseInt(hex.substring(4, 6), 16);
+            double rr = r / 255.0, gg = g / 255.0, bb = b / 255.0;
+            double max = Math.max(rr, Math.max(gg, bb));
+            double min = Math.min(rr, Math.min(gg, bb));
+            double d = max - min;
+            double h;
+            if (d == 0) h = 0;
+            else if (max == rr) h = 60 * (((gg - bb) / d) % 6);
+            else if (max == gg) h = 60 * (((bb - rr) / d) + 2);
+            else h = 60 * (((rr - gg) / d) + 4);
+            h = (h + degrees) % 360;
+            if (h < 0) h += 360;
+            double s = max == 0 ? 0 : d / max;
+            double v = max;
+            double c = v * s;
+            double x = c * (1 - Math.abs((h / 60) % 2 - 1));
+            double m = v - c;
+            double nr, ng, nb;
+            if (h < 60) { nr = c; ng = x; nb = 0; }
+            else if (h < 120) { nr = x; ng = c; nb = 0; }
+            else if (h < 180) { nr = 0; ng = c; nb = x; }
+            else if (h < 240) { nr = 0; ng = x; nb = c; }
+            else if (h < 300) { nr = x; ng = 0; nb = c; }
+            else { nr = c; ng = 0; nb = x; }
+            int outR = (int) Math.round((nr + m) * 255);
+            int outG = (int) Math.round((ng + m) * 255);
+            int outB = (int) Math.round((nb + m) * 255);
+            return String.format(Locale.ROOT, "%02X%02X%02X", outR, outG, outB);
+        } catch (Exception e) {
+            return hex;
+        }
+    }
+
+    /** gradient() with both ends hue-rotated by {@code phase} (0..1) — no frame stepping. */
+    public static String gradientAnimated(String text, String hex1, String hex2, double phase) {
+        if (text == null) return "";
+        double deg = (phase - Math.floor(phase)) * 360.0;
+        return gradient(text, rotateHue(hex1, deg), rotateHue(hex2, deg));
+    }
+
     /** Expands <gradient:#AAA:#BBB>text</gradient> tags (named/legacy colors also accepted). */
     private static String expandGradients(String s) {
         if (s == null || s.indexOf("<gradient") < 0) return s;

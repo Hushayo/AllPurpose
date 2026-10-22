@@ -10,6 +10,7 @@ public class AllPurpose extends JavaPlugin {
     private RankManager ranks;
     private LeaderboardManager leaderboard;
     private NametagManager nametag;
+    private RankAnimation rankAnimation;
     private LpExpiryNotifier lpExpiry;
     private UpdateManager updater;
     private DiscordWebhook webhook;
@@ -48,6 +49,10 @@ public class AllPurpose extends JavaPlugin {
 
     public NametagManager getNametag() {
         return nametag;
+    }
+
+    public RankAnimation getRankAnimation() {
+        return rankAnimation;
     }
 
     public LpExpiryNotifier getLpExpiry() {
@@ -412,6 +417,8 @@ public class AllPurpose extends JavaPlugin {
                 @Override public void run() { nametag.tickNametags(); }
             }, 40L, Math.max(2L, getConfig().getLong("nametag.refresh-ticks", 10)));
         }
+        rankAnimation = new RankAnimation(this);
+        rankAnimation.reload();
         getLogger().info("AllPurpose (ranks-only) enabled. Ranks: " + ranks.rankNames().size());
         getLogger().info("Nametag mode: " + nametag.nametagMode() + " TAB=" + (getServer().getPluginManager().getPlugin("TAB") != null));
         ranks.ensureRank("MEMBER", "&7MEMBER");
@@ -450,5 +457,6 @@ public class AllPurpose extends JavaPlugin {
         try { if (leaderboard != null) leaderboard.shutdown(); } catch (Exception ignored) {}
         try { if (lpExpiry != null) lpExpiry.shutdown(); } catch (Exception ignored) {}
         try { if (nametag != null) nametag.clearOrphanTagHolo(); } catch (Exception ignored) {}
+        try { if (rankAnimation != null) rankAnimation.stop(); } catch (Exception ignored) {}
     }
 }

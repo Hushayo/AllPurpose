@@ -155,11 +155,15 @@ public class NametagManager {
     }
 
     private String fill(String fmt, Player p) {
+        return fill(fmt, p, null);
+    }
+
+    private String fill(String fmt, Player p, String prefixOverride) {
         if (fmt == null) return "";
         String out = fmt;
         String key = plugin.getRanks().playerRankKey(p);
         String rank = key == null ? "" : plugin.getRanks().displayName(key);
-        String prefix = key == null ? "" : plugin.getRanks().prefixOf(key);
+        String prefix = prefixOverride != null ? prefixOverride : (key == null ? "" : plugin.getRanks().prefixOf(key));
         out = out.replace("{rank}", rank);
         out = out.replace("{prefix}", prefix);
         out = out.replace("{name}", p.getName());
@@ -216,11 +220,15 @@ public class NametagManager {
     }
 
     private String tabLine(Player p) {
+        return tabLine(p, null);
+    }
+
+    private String tabLine(Player p, String prefixOverride) {
         try {
             String tpl = plugin.getConfig().getString("nametag.tab-line", "{prefix} {name} &8| &c{hearts} &8| &7Kills: &f{kills}");
             // Keep the prefix's colour off the name in the no-TAB fallback too.
             if (tpl != null) tpl = tpl.replace("{prefix}", "{prefix}§r");
-            return fill(tpl, p);
+            return fill(tpl, p, prefixOverride);
         } catch (Exception e) {
             return p.getName();
         }
@@ -309,6 +317,27 @@ public class NametagManager {
 
     public void applyNametag(Player p) {
         pushTagLine(p);
+    }
+
+    /**
+     * Pushes an animated rank prefix (already hue-rotated by the caller) to
+     * TAB/nametag. Bypasses pushTagLine's "unchanged" cache on purpose: the
+     * text is supposed to change every tick.
+     */
+    public void applyAnimatedPrefix(Player p, String rankPrefix) {
+        if (p == null || !p.isOnline() || rankPrefix == null) return;
+        if (!useTabLine()) return;
+        try {
+            String prefix = fill(plugin.getConfig().getString("nametag.prefix", "[{prefix}] "), p, rankPrefix);
+            String suffix = fill(plugin.getConfig().getString("nametag.suffix", " &8| &c{hearts} &8| &7Kills: &f{kills} &8| &7Ping: {ping}"), p);
+            prefix = endNameColour(prefix);
+            if (tabApiPresent()) {
+                pushTabFull(p, prefix, suffix);
+            } else {
+                p.setDisplayName(TextUtil.legacy(tabLine(p, rankPrefix)));
+                p.playerListName(TextUtil.prefixComponent(tabLine(p, rankPrefix)));
+            }
+        } catch (Exception ignored) {}
     }
 
     private boolean tabApiPresent() {
